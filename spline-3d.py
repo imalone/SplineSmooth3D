@@ -21,19 +21,30 @@ inimg = nib.load(infile)
 inimgdata = inimg.get_fdata()
 
 
-M=[4,5,6]
+M=[0,1,2]
 
 d=[1,1,1]
 order=3
-nk = [ x + (order+1) for x in M ]
 
-k = [ np.linspace(0,thisd,thisk) for thisd, thisk in zip(d,nk) ]
+Nphi = [ x + (order+1) for x in M ]
+
+# Hayes and Halliday, cubic B-splines.
+# A (here B) is m * (h+4), h+8 knots are required
+
+def findknots(a,b,nphi, order=order):
+  endK = order-1 # I think this is correct, certainly
+    # 2 at each end for cubic B-spline.
+  knots = np.linspace(a,b,nphi,endpoint=True)
+  knots = np.concatenate(([knots[0]]*endK,knots,[knots[-1]]*endK))
+  return knots
+
+k = [ findknots(0,thisd,thisphi) for thisd, thisphi in zip(d,Nphi) ]
 
 N=inimgdata.shape
 loc=[ np.linspace(0,thisd,thisN) for thisd, thisN in zip(d,N) ]
 
 def BforData1D(knots,datapoints, order=3):
-  Nphi = len(knots) - (order+1)
+  Nphi = len(knots) - (order-1)*2
   B = np.zeros((len(datapoints), Nphi))
   for p in range(0,Nphi):
     xp = np.zeros(Nphi)
@@ -59,7 +70,7 @@ orderedProduct = orderedProduct_asOuter
 
 B3d = [ BforData1D(k[dim],loc[dim]) for dim in range(0,3) ]
 
-Bfull = np.zeros((np.prod(N), np.prod(M)))
+Bfull = np.zeros((np.prod(N), np.prod(Nphi)))
 
 t_start=time.time()
 print(t_start)
