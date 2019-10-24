@@ -107,7 +107,7 @@ else:
 AtAinv = np.linalg.inv(AtA+J)
 P = np.matmul(AtAinv,Atx)
 
-## At this point P appears to have a heck of a lot of zero elements...
+## Now fully supported, but clearly wrong when reconstructing.
 ## Definitely some indexing mix-up somewhere.
 
 ## Need to calc AP now...
