@@ -98,7 +98,7 @@ print(t_end-t_start)
 # A hack, but just to get something invertible. Should be invertible
 # as full coverage, but not, indicates an earlier mistake.
 # Possibly was an error in setup of indsXpattern.
-cheatsmoothing = False:
+cheatsmoothing = False
 if cheatsmoothing:
     J=np.diag([0.01]*AtA.shape[0])
 else:
