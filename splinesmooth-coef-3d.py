@@ -22,7 +22,7 @@ if realdata:
     inimgdata = inimg.get_fdata()
 else:
     testshape=(50,100,150)
-    testshape=(50,100,1)
+    #testshape=(50,100,1)
     inimgdata=np.zeros(testshape)
     for Z in range(0,testshape[0]) :
       print (Z)
@@ -72,12 +72,19 @@ t_last=t_start
 print(t_start)
 q1=q+1
 q13 = q1**3
-indsZpattern = np.tile(range(0,q1),q1*q1) 
-indsYpattern = np.tile(np.repeat(range(0,q1),q1),q1) * kntsArr[0][0]
-indsXpattern = np.repeat(range(0,q1),q1*q1) * kntsArr[0][0] * kntsArr[1][0]
+#indsZpattern = np.tile(range(0,q1),q1*q1) 
+#indsYpattern = np.tile(np.repeat(range(0,q1),q1),q1) * kntsArr[0][0]
+#indsXpattern = np.repeat(range(0,q1),q1*q1) * kntsArr[0][0] * kntsArr[1][0]
 
-indsZpattern = np.tile(range(0,q1),q1) 
-indsYpattern = np.repeat(range(0,q1),q1) * kntsArr[0][0]
+# X is fastest changing: LAST index
+indsXpattern = np.tile(range(0,q1),q1*q1) 
+indsYpattern = np.tile(np.repeat(range(0,q1),q1),q1) * kntsArr[2][0]
+indsZpattern = np.repeat(range(0,q1),q1*q1) * kntsArr[2][0] * kntsArr[1][0]
+
+
+## 2d
+#indsZpattern = np.tile(range(0,q1),q1) 
+#indsYpattern = np.repeat(range(0,q1),q1) * kntsArr[0][0]
 
 
 needAtA=True
@@ -100,13 +107,18 @@ for Z in range(0,shape[0]) :
 
       # Using pre-assigned out=array gives only about 1us improvement.
       # pre-assigning arrays and using (a,b,out=preassigned)
+      ## orderedProduct(Z,Y,X), x changes fastest in resulting list
       coefs = orderedProduct_asOuter(cZ,cY,cX)
       coefsx = np.multiply(coefs, inimgdata[Z,Y,X])
       # 15us
 
-      indsZ = indsZpattern + cIndZ
-      indsY = indsYpattern + cIndY * kntsArr[0][0]
-      indsX = indsXpattern + cIndX * kntsArr[0][0] * kntsArr[1][0]
+      #indsZ = indsZpattern + cIndZ
+      #indsY = indsYpattern + cIndY * kntsArr[0][0]
+      #indsX = indsXpattern + cIndX * kntsArr[0][0] * kntsArr[1][0]
+      indsX = indsXpattern + cIndX
+      indsY = indsYpattern + cIndY * kntsArr[2][0]
+      indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
+
       tgtinds = indsZ + indsY + indsX
       # 18us
       
@@ -173,9 +185,12 @@ for Z in range(0,shape[0]) :
       # cube, they then need to go in at intervals,
       # q+1 long runs.
       coefs = orderedProduct_asOuter(cZ,cY,cX).reshape(q13)
-      indsZ = indsZpattern + cIndZ
-      indsY = indsYpattern + cIndY * kntsArr[0][0]
-      indsX = indsXpattern + cIndX * kntsArr[0][0] * kntsArr[1][0]
+      #indsZ = indsZpattern + cIndZ
+      #indsY = indsYpattern + cIndY * kntsArr[0][0]
+      #indsX = indsXpattern + cIndX * kntsArr[0][0] * kntsArr[1][0]
+      indsX = indsXpattern + cIndX
+      indsY = indsYpattern + cIndY * kntsArr[2][0]
+      indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
       tgtinds = indsZ + indsY + indsX
       pred[Z,Y,X] = np.inner(P[tgtinds],coefs)
 
