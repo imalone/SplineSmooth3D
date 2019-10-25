@@ -65,6 +65,7 @@ Atx = np.zeros(totalPar)
 # N.B. shallow copy for flat indexing into AtA
 AtAflat = AtA.reshape((AtA.shape[0]*AtA.shape[1]))
 
+# Direct A works.
 A=np.zeros((np.prod(inimg.shape),totalPar))
 
 t_start=time.time()
