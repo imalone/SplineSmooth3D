@@ -10,14 +10,25 @@ import numpy.linalg as linalg
 import numpy as np
 import nibabel as nib
 
+from test_scipyspline import knots_over_domain, eval_nonzero_bspl
+
 def orderedProduct_asOuter(Z,Y,X):
   return np.outer(np.outer(Z,Y),X)
 
 infile="adni3-1006.nii.gz"
 outfile="test-splinesmooth3d.nii.gz"
 testfile="test-model.nii.gz"
-realdata=False
-if realdata:
+realData=True
+# Storing the whole A matrix is potentially faster, but needs *lots* of
+# memory, so only practical for small images and testing
+useA=False
+# Timing information during voxel addition loop.
+reportTimeSteps=True
+
+q = 3
+spacing = 50
+
+if realData:
     inimg = nib.load(infile)
     inimgdata = inimg.get_fdata()
 else:
@@ -38,8 +49,6 @@ else:
     nib.save(inimg,testfile) 
 
 
-q = 3
-spacing = 50
 
 shape=inimg.shape
 voxsizes=nib.affines.voxel_sizes(inimg.affine)
@@ -66,30 +75,21 @@ Atx = np.zeros(totalPar)
 AtAflat = AtA.reshape((AtA.shape[0]*AtA.shape[1]))
 
 # Direct A works.
-A=np.zeros((np.prod(inimg.shape),totalPar))
+if useA:
+  A=np.zeros((np.prod(inimg.shape),totalPar))
 
 t_start=time.time()
 t_last=t_start
 print(t_start)
 q1=q+1
 q13 = q1**3
-#indsZpattern = np.tile(range(0,q1),q1*q1) 
-#indsYpattern = np.tile(np.repeat(range(0,q1),q1),q1) * kntsArr[0][0]
-#indsXpattern = np.repeat(range(0,q1),q1*q1) * kntsArr[0][0] * kntsArr[1][0]
 
 # X is fastest changing: LAST index
 indsXpattern = np.tile(range(0,q1),q1*q1) 
 indsYpattern = np.tile(np.repeat(range(0,q1),q1),q1) * kntsArr[2][0]
 indsZpattern = np.repeat(range(0,q1),q1*q1) * kntsArr[2][0] * kntsArr[1][0]
 
-
-## 2d
-#indsZpattern = np.tile(range(0,q1),q1) 
-#indsYpattern = np.repeat(range(0,q1),q1) * kntsArr[0][0]
-
-
 needAtA=True
-timeSteps=True
 for Z in range(0,shape[0]) :
   print (Z)
   (cIndZ, cZ) = coefArr[0][Z]
@@ -113,19 +113,17 @@ for Z in range(0,shape[0]) :
       coefsx = np.multiply(coefs, inimgdata[Z,Y,X])
       # 15us
 
-      #indsZ = indsZpattern + cIndZ
-      #indsY = indsYpattern + cIndY * kntsArr[0][0]
-      #indsX = indsXpattern + cIndX * kntsArr[0][0] * kntsArr[1][0]
       indsX = indsXpattern + cIndX
       indsY = indsYpattern + cIndY * kntsArr[2][0]
       indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
-
       tgtinds = indsZ + indsY + indsX
       # 18us
+      if useA:
+        # Not included in times
+        A[X+shape[2]*Y+shape[2]*shape[1]*Z,tgtinds]=coefs.reshape(q13)
       
       Atx[tgtinds] += coefsx.reshape(q13)
       # 20us
-      A[X+shape[2]*Y+shape[2]*shape[1]*Z,tgtinds]=coefs.reshape(q13)
       if needAtA:
         ## Pre-assigning array makes little difference
         AtAadd = np.outer(coefs,coefs)
@@ -145,7 +143,7 @@ for Z in range(0,shape[0]) :
 
         AtAflat[flatinds.reshape(q13**2)] += AtAadd.reshape((q13**2))
         # 45us
-      if timeSteps:
+      if reportTimeSteps:
         t_now = time.time()
         print(t_now-t_last)
         t_last=t_now
@@ -153,9 +151,11 @@ t_end=time.time()
 print(t_end)
 print(t_end-t_start)
 
-# A hack, but just to get something invertible. Should be invertible
-# as full coverage, but not, indicates an earlier mistake.
-# Possibly was an error in setup of indsXpattern.
+# A hack, but useful in testing to get something invertible.
+# With data covering the full domain AtA by itself should be
+# invertible, if it's not that indicates an earlier error.
+# With incomplete coverage some J is required to regularise
+# the uncovered areas.
 cheatsmoothing = False
 if cheatsmoothing:
     J=np.diag([0.01]*AtA.shape[0])
@@ -165,13 +165,10 @@ else:
 AtAinv = np.linalg.inv(AtA+J)
 P = np.matmul(AtAinv,Atx)
 
-## Now fully supported, but clearly wrong when reconstructing.
-## Definitely some indexing mix-up somewhere.
-
 ## Need to calc AP now...
 pred = np.zeros(inimgdata.shape)
 
-# Confirmed AP loop works if given good P.
+# Same process as earlier, but without AtA calculation.
 for Z in range(0,shape[0]) :
   print (Z)
   (cIndZ, cZ) = coefArr[0][Z]
@@ -179,17 +176,9 @@ for Z in range(0,shape[0]) :
     (cIndY, cY) = coefArr[1][Y]
     for X in range(0,shape[2]) :
       (cIndX, cX) = coefArr[2][X]
-      # striping the BX, BY, BZ tensor into
-      # the outer-product order. Doesn't matter
-      # what choice we make so long as consistent
-      # going to end up with (q+1) * (q+1) * (q+1)
-      # coefficients, corresponding to the support
-      # cube, they then need to go in at intervals,
-      # q+1 long runs.
+
       coefs = orderedProduct_asOuter(cZ,cY,cX).reshape(q13)
-      #indsZ = indsZpattern + cIndZ
-      #indsY = indsYpattern + cIndY * kntsArr[0][0]
-      #indsX = indsXpattern + cIndX * kntsArr[0][0] * kntsArr[1][0]
+
       indsX = indsXpattern + cIndX
       indsY = indsYpattern + cIndY * kntsArr[2][0]
       indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
