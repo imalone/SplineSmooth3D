@@ -23,7 +23,7 @@ realData=True
 # memory, so only practical for small images and testing
 useA=False
 # Timing information during voxel addition loop.
-reportTimeSteps=True
+reportTimeSteps=False
 
 q = 3
 spacing = 50
@@ -33,10 +33,9 @@ if realData:
     inimgdata = inimg.get_fdata()
 else:
     testshape=(50,100,150)
-    #testshape=(50,100,1)
     inimgdata=np.zeros(testshape)
     for Z in range(0,testshape[0]) :
-      print (Z)
+      print ("Building test: slice {} of {}".format(Z,testshape[0]))
       dz2 = (Z-testshape[0]/2.0)**2
       for Y in range(0,testshape[1]) :
         dy2 = (Y-testshape[1]/2.0)**2
@@ -91,7 +90,7 @@ indsZpattern = np.repeat(range(0,q1),q1*q1) * kntsArr[2][0] * kntsArr[1][0]
 
 needAtA=True
 for Z in range(0,shape[0]) :
-  print (Z)
+  print ("Fitting, slice {} of {}".format(Z,shape[0]))
   (cIndZ, cZ) = coefArr[0][Z]
   for Y in range(0,shape[1]) :
     (cIndY, cY) = coefArr[1][Y]
@@ -170,7 +169,7 @@ pred = np.zeros(inimgdata.shape)
 
 # Same process as earlier, but without AtA calculation.
 for Z in range(0,shape[0]) :
-  print (Z)
+  print ("Projection, slice {} of {}".format(Z,shape[0]))
   (cIndZ, cZ) = coefArr[0][Z]
   for Y in range(0,shape[1]) :
     (cIndY, cY) = coefArr[1][Y]
