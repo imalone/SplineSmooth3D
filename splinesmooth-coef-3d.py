@@ -171,6 +171,7 @@ P = np.matmul(AtAinv,Atx)
 ## Need to calc AP now...
 pred = np.zeros(inimgdata.shape)
 
+# Confirmed AP loop works if given good P.
 for Z in range(0,shape[0]) :
   print (Z)
   (cIndZ, cZ) = coefArr[0][Z]
