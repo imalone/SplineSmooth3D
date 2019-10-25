@@ -13,9 +13,30 @@ import nibabel as nib
 def orderedProduct_asOuter(Z,Y,X):
   return np.outer(np.outer(Z,Y),X)
 
-infile='adni3-1006.nii.gz'
-inimg = nib.load(infile)
-inimgdata = inimg.get_fdata()
+infile="adni3-1006.nii.gz"
+outfile="test-splinesmooth3d.nii.gz"
+testfile="test-model.nii.gz"
+realdata=False
+if realdata:
+    inimg = nib.load(infile)
+    inimgdata = inimg.get_fdata()
+else:
+    testshape=(50,100,150)
+    testshape=(50,100,1)
+    inimgdata=np.zeros(testshape)
+    for Z in range(0,testshape[0]) :
+      print (Z)
+      dz2 = (Z-testshape[0]/2.0)**2
+      for Y in range(0,testshape[1]) :
+        dy2 = (Y-testshape[1]/2.0)**2
+        for X in range(0,testshape[2]) :
+          dx2 = (X-testshape[2]/2.0)**2
+          inimgdata[Z][Y][X] = dx2 + dy2 + dz2
+          #print("{} {} {} : {} {} {} : {}".format(X,Y,Z,dx2,dy2,dz2,inimgdata[Z][Y][X]))
+    aff = np.diag([1]*4)
+    inimg = nib.nifti1.Nifti1Image(inimgdata,aff)
+    nib.save(inimg,testfile) 
+
 
 q = 3
 spacing = 50
@@ -44,6 +65,8 @@ Atx = np.zeros(totalPar)
 # N.B. shallow copy for flat indexing into AtA
 AtAflat = AtA.reshape((AtA.shape[0]*AtA.shape[1]))
 
+A=np.zeros((np.prod(inimg.shape),totalPar))
+
 t_start=time.time()
 t_last=t_start
 print(t_start)
@@ -53,7 +76,12 @@ indsZpattern = np.tile(range(0,q1),q1*q1)
 indsYpattern = np.tile(np.repeat(range(0,q1),q1),q1) * kntsArr[0][0]
 indsXpattern = np.repeat(range(0,q1),q1*q1) * kntsArr[0][0] * kntsArr[1][0]
 
+indsZpattern = np.tile(range(0,q1),q1) 
+indsYpattern = np.repeat(range(0,q1),q1) * kntsArr[0][0]
+
+
 needAtA=True
+timeSteps=True
 for Z in range(0,shape[0]) :
   print (Z)
   (cIndZ, cZ) = coefArr[0][Z]
@@ -72,8 +100,8 @@ for Z in range(0,shape[0]) :
 
       # Using pre-assigned out=array gives only about 1us improvement.
       # pre-assigning arrays and using (a,b,out=preassigned)
-      coefs = orderedProduct_asOuter(cZ,cY,cZ)
-      coefsx = np.multiply(coeffs, inimgdata[Z,Y,X])
+      coefs = orderedProduct_asOuter(cZ,cY,cX)
+      coefsx = np.multiply(coefs, inimgdata[Z,Y,X])
       # 15us
 
       indsZ = indsZpattern + cIndZ
@@ -82,9 +110,9 @@ for Z in range(0,shape[0]) :
       tgtinds = indsZ + indsY + indsX
       # 18us
       
-      Atx[tgtinds] += coefsx
+      Atx[tgtinds] += coefsx.reshape(q13)
       # 20us
-
+      A[X+shape[2]*Y+shape[2]*shape[1]*Z,tgtinds]=coefs.reshape(q13)
       if needAtA:
         ## Pre-assigning array makes little difference
         AtAadd = np.outer(coefs,coefs)
@@ -104,9 +132,10 @@ for Z in range(0,shape[0]) :
 
         AtAflat[flatinds.reshape(q13**2)] += AtAadd.reshape((q13**2))
         # 45us
-      t_now = time.time()
-      print(t_now-t_last)
-      t_last=t_now
+      if timeSteps:
+        t_now = time.time()
+        print(t_now-t_last)
+        t_last=t_now
 t_end=time.time()
 print(t_end)
 print(t_end-t_start)
@@ -143,7 +172,7 @@ for Z in range(0,shape[0]) :
       # coefficients, corresponding to the support
       # cube, they then need to go in at intervals,
       # q+1 long runs.
-      coefs = orderedProduct_asOuter(cZ,cY,cZ).flat
+      coefs = orderedProduct_asOuter(cZ,cY,cX).reshape(q13)
       indsZ = indsZpattern + cIndZ
       indsY = indsYpattern + cIndY * kntsArr[0][0]
       indsX = indsXpattern + cIndX * kntsArr[0][0] * kntsArr[1][0]
@@ -151,4 +180,4 @@ for Z in range(0,shape[0]) :
       pred[Z,Y,X] = np.inner(P[tgtinds],coefs)
 
 imgresnii = nib.Nifti1Image(pred, inimg.affine, inimg.header)
-nib.save(imgresnii,"test-splinesmooth3d.nii.gz") 
+nib.save(imgresnii,outfile) 
