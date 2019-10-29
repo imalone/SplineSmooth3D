@@ -257,9 +257,9 @@ else:
 
 # Cholesky and solver (can also just use solver, but
 # since we know AtA+J is symmetric.
-L = np.linalg(AtA+J)
-p1=np.solve(L, Atx)
-P=np.solve(L.T.conj(),p1)
+L = np.linalg.cholesky(AtA+J)
+p1=np.linalg.solve(L, Atx)
+P=np.linalg.solve(L.T.conj(),p1)
 
 ## Need to calc AP now...
 pred = np.zeros(inimgdata.shape)
