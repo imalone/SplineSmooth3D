@@ -127,34 +127,46 @@ for cIndZ in range(len(invCoefArr[0])):
       firstX, coefsX = invCoefArr[2][cIndX]
       nindX=coefsX.shape[0]
       print("{} {} {}".format(cIndZ,cIndY,cIndX))
-      localAtens = np.einsum("zi,yj,xk->zyxijk",
-                             coefsZ,coefsY,coefsX)
-      localA = localAtens.reshape((-1,q13))
+
       localData = inimgdata[firstZ:firstZ+nindZ,
                             firstY:firstY+nindY,
                             firstX:firstX+nindX]
-      localAtA = np.matmul(localA.transpose(),localA)
-      localAtx = np.matmul(localA.transpose(),localData.reshape(-1))
+
+      # This is what we're actually doing, below, and may help
+      # explain what might seem an odd order of indices
+      #localAtens = np.einsum("zi,yj,xk->zyxijk",
+      #                       coefsZ,coefsY,coefsX)
+      #localA = localAtens.reshape((-1,q13))
+      #localAtA = np.matmul(localA.transpose(),localA)
+      #localAtx = np.matmul(localA.transpose(),localData.reshape(-1))
+
+      # .encode("ascii","ignore") is necessary to avoid a TypeError
+      # due to  from __future__ import (unicode_literals)
+      localAtA = np.einsum(
+         "xc,yb,za,zi,yj,xk->abcijk".encode("ascii","ignore"),
+         coefsX,coefsY,coefsZ,                                          
+         coefsZ,coefsY,coefsX, optimize=True ).reshape((q13,q13))       
+      localAtx = np.einsum(                                            
+        "xc,yb,za,zyx->abc".encode("ascii","ignore"),
+        coefsX,coefsY,coefsZ,                                          
+        localData, optimize=True).reshape((-1))                        
 
       indsX = indsXpattern + cIndX
       indsY = indsYpattern + cIndY * kntsArr[2][0]
       indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
       tgtinds = indsZ + indsY + indsX
-      # 18us
       ## Need to re-write A building if we still want to have
-      ## the option: needs indexing of vox locations into final A
+      ## the option: needs indexing of vox locations into final A,
+      ## alternatively store an array of the non-zero A for supported
+      ## regions, which will only ever be q13 * image size
       ##if useA:
       ##  # Not included in times
       ##  A[X+shape[2]*Y+shape[2]*shape[1]*Z,tgtinds]=coefs.reshape(q13)
       
       Atx[tgtinds] += localAtx
-      # 20us
       if needAtA:
-        ## Pre-assigning array makes little difference
-        ## Pre-assigning seemingly slower?
         flatinds = tgtinds.reshape((q13,1)) + \
           totalPar * tgtinds.reshape((1,q13))
-        # 32-33 us
         AtAflat[flatinds.reshape(q13**2)] += localAtA.reshape((q13**2))
       if reportTimeSteps:
         t_now = time.time()
@@ -275,17 +287,26 @@ for cIndZ in range(len(invCoefArr[0])):
       firstX, coefsX = invCoefArr[2][cIndX]
       nindX=coefsX.shape[0]
       print("{} {} {}".format(cIndZ,cIndY,cIndX))
-      localAtens = np.einsum("zi,yj,xk->zyxijk",
-                             coefsZ,coefsY,coefsX)
-      localA = localAtens.reshape((-1,q13))
 
       indsX = indsXpattern + cIndX
       indsY = indsYpattern + cIndY * kntsArr[2][0]
       indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
       tgtinds = indsZ + indsY + indsX
       localP = P[tgtinds]
-      localAp = np.matmul(localA,localP)
-      localAp = localAp.reshape((nindZ,nindY,nindX))
+
+      # Again, finding the local tensor, then vectorising,
+      # without the overall einsum:
+      # localAtens = np.einsum("zi,yj,xk->zyxijk",
+      #                       coefsZ,coefsY,coefsX)
+      # localA = localAtens.reshape((-1,q13))
+      # localAp = np.matmul(localA,localP)
+      # localAp = localAp.reshape((nindZ,nindY,nindX))
+
+      localAp = np.einsum(
+        "zi,yj,xk,ijk->zyx".encode("ascii","ignore"),
+        coefsZ,coefsY,coefsX,
+        localP.reshape((q1,q1,q1)),
+        optimize=True )
 
       pred[firstZ:firstZ+nindZ,
            firstY:firstY+nindY,
