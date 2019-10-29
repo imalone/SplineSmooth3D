@@ -70,6 +70,96 @@ coefArr = [
   for (knts, nvox, voxsize) in zip (kntsArr, shape, voxsizes)]
 
 
+
+def buildGammaMat(dist, order, q=3):
+  # dist knot spacing, order is derivative order, q is spline
+  # degree, however only q=3 supported.
+  # Implementing Shackleford et al. LNCS 7511 MICCAI 2012
+  if q!=3:
+    raise ValueError('buildGammaMat only supports q=3')
+  B = np.array([[1, -3, 3, -1],
+                [4, 0, -6, 3],
+                [1, 3, 3, -3],
+                [0, 0, 0, 1]])
+  dist=float(dist)
+  R = np.diag(np.power(dist,[0,-1,-2,-3]))
+  n = np.arange(1,8)
+  psi = np.power(dist,n)/n
+  D = [
+    np.diag([1,1,1,1]),
+    np.diag([1,2,3],-1),
+    np.diag([2,6],-2)
+    ]
+  Q = np.matmul(B,np.matmul(R,D[order]))
+  # xsi_{a,b} is a 4x4 matrix corresponding to
+  # xsi_{a,b}_{i,j} = (q_a outer q_b)_{i,j}
+  # where q_a is row a of Q
+  xsi = np.einsum("ai,bj->abij",Q,Q)
+  offset = range((Q.shape[0]-1),-(Q.shape[1]),-1)
+  # like:
+  # 1000 0100 0010
+  # 0000 1000 0100  ... etc.
+  # 0000 0000 1000
+  # 0000 0000 0000
+  sigmabases = np.array(
+    [np.fliplr(np.diag([1]*(4-abs(thisOff)),thisOff))
+     for thisOff in offset])
+  # Don't need sigma itself, but it's abij,uij->abu
+  gamma = np.einsum("abij,uij,u->ab",xsi,sigmabases,psi)
+  return gamma
+
+
+def buildBigGammaMat(dist, orders, q=3):
+  # dist uniform knot spacing (assumed isotropic so far),
+  # orders (dz, dy, dx) are derivative orders 0 to 2,
+  # q=3 is spline degree (only 3 supported)
+  # Implementing Shackleford et al. LNCS 7511 MICCAI 2012
+  gammaZ = buildGammaMat(dist,orders[0],q)
+  gammaY = buildGammaMat(dist,orders[1],q)
+  gammaX = buildGammaMat(dist,orders[2],q)
+  bigGamma = np.einsum("ai,bj,ck->abcijk",
+                       gammaZ,
+                       gammaY,
+                       gammaX)
+  return bigGamma.reshape(np.power(gammaZ.shape,3))
+
+
+def buildJ(dist,q=3):
+  # dist assumed isotropic so far, though relatively simple
+  # to generalise if needed (mainly need to do type checking)
+  # only spline degree q=3 supported
+  # Implementing Shackleford et al. LNCS 7511 MICCAI 2012
+  # Analytic Regularization of Uniform Cubic B-spline
+  # Deformation Fields
+  # An alternative would be Wood 2016 https://arxiv.org/abs/1605.02446v1
+  # which sets up a similar thing using evaluation at a number of
+  # points of the splines to exactly fit the polynomial. This
+  # more easily adapts to q!=3, however it needs a bit of furter work to
+  # allow the mixed d2/dxdy that Shackleford has and which we need
+  # for N3's thin-plate cost function, so sticking with this one.
+  J = None
+  for dx in range(0,3):
+    for dy in range(0,3):
+      for dz in range(0,3):
+        if (dx+dy+dz)==2:
+          orders=(dx,dy,dz)
+          # I have my doubts that Shackleford correctly has
+          # the desired 2* on the d2v/dxdy with this construction,
+          # unless it's hidden in the gamma(1) terms in eq. 18
+          # Individual Gamma(dx,dy,dz) in eq. 11 are
+          # = (d2v/dei/dej)^2, meaning we should be adding the
+          # double count for d2/dxdy + d2/dydx ourselves.
+          newJ = buildBigGammaMat(dist,orders)
+          if (dx==dy or dx==dz or dy==dz):
+            newJ *= 2
+          if J is None:
+            J = newJ
+          else:
+            J += newJ
+  return J
+
+
+
 def invertCoefList (coefList):
   # return: list indexed by first supporting coef number
   # each element contains: first voxel index,
@@ -246,10 +336,30 @@ print(t_end-t_start)
 # With incomplete coverage some J is required to regularise
 # the uncovered areas.
 cheatsmoothing = False
+nosmoothing=False
 if cheatsmoothing:
     J=np.diag([0.01]*AtA.shape[0])
+elif nosmoothing:
+    J=np.zeros(AtA.shape)
 else:
     J=np.zeros(AtA.shape)
+    Jflat=J.reshape(-1)
+    lsmooth = 0.1
+    smallJ = buildJ(spacing) * lsmooth
+    for cIndZ in range(len(invCoefArr[0])):
+      for cIndY in range(len(invCoefArr[1])):
+        for cIndX in range(len(invCoefArr[2])):
+          print("{} {} {}".format(cIndZ,cIndY,cIndX))
+
+          indsX = indsXpattern + cIndX
+          indsY = indsYpattern + cIndY * kntsArr[2][0]
+          indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
+          tgtinds = indsZ + indsY + indsX
+          flatinds = tgtinds.reshape((q13,1)) + \
+            totalPar * tgtinds.reshape((1,q13))
+     
+          Jflat[flatinds.reshape(-1)] += smallJ.reshape(-1)
+
 
 # Direct inverse:
 #AtAinv = np.linalg.inv(AtA+J)
