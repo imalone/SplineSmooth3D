@@ -70,6 +70,29 @@ coefArr = [
   for (knts, nvox, voxsize) in zip (kntsArr, shape, voxsizes)]
 
 
+def invertCoefList (coefList):
+  # return: list indexed by first supporting coef number
+  # each element contains: first voxel index,
+  #                        list of (q) coeffs for that vox
+  # not necessarily a matrix due to possibility of unequal
+  # number of voxels with intervals (particularly at ends)?
+  cIndList = [x[0] for x in coefList]
+  q1 = coefList[0][1].shape[0]
+  coefValList = np.array([x[1] for x in coefList]).reshape((-1,q1))
+  firstC, voxinds, coefinds = np.unique(cIndList,
+                             return_index=True, return_inverse=True)
+  Alocs =[
+    [firstvox, coefValList[coefinds==C,:]]
+    for (C, firstvox) in zip (firstC, voxinds)
+  ]
+  return Alocs
+
+
+invCoefArr = [
+  invertCoefList(coefList)
+  for coefList in coefArr
+]
+
 AtA = np.zeros((totalPar,totalPar))
 Atx = np.zeros(totalPar)
 # N.B. shallow copy for flat indexing into AtA
@@ -91,7 +114,60 @@ indsYpattern = np.tile(np.repeat(range(0,q1),q1),q1) * kntsArr[2][0]
 indsZpattern = np.repeat(range(0,q1),q1*q1) * kntsArr[2][0] * kntsArr[1][0]
 
 needAtA=True
+slow=False
+
+for cIndZ in range(len(invCoefArr[0])):
+  if slow: break
+  firstZ, coefsZ = invCoefArr[0][cIndZ]
+  nindZ=coefsZ.shape[0]
+  for cIndY in range(len(invCoefArr[1])):
+    firstY, coefsY = invCoefArr[1][cIndY]
+    nindY=coefsY.shape[0]
+    for cIndX in range(len(invCoefArr[2])):
+      firstX, coefsX = invCoefArr[2][cIndX]
+      nindX=coefsX.shape[0]
+      print("{} {} {}".format(cIndZ,cIndY,cIndX))
+      localAtens = np.einsum("zi,yj,xk->zyxijk",
+                             coefsZ,coefsY,coefsX)
+      localA = localAtens.reshape((-1,q13))
+      localData = inimgdata[firstZ:firstZ+nindZ,
+                            firstY:firstY+nindY,
+                            firstX:firstX+nindX]
+      localAtA = np.matmul(localA.transpose(),localA)
+      localAtx = np.matmul(localA.transpose(),localData.reshape(-1))
+
+      indsX = indsXpattern + cIndX
+      indsY = indsYpattern + cIndY * kntsArr[2][0]
+      indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
+      tgtinds = indsZ + indsY + indsX
+      # 18us
+      ## Need to re-write A building if we still want to have
+      ## the option: needs indexing of vox locations into final A
+      ##if useA:
+      ##  # Not included in times
+      ##  A[X+shape[2]*Y+shape[2]*shape[1]*Z,tgtinds]=coefs.reshape(q13)
+      
+      Atx[tgtinds] += localAtx
+      # 20us
+      if needAtA:
+        ## Pre-assigning array makes little difference
+        ## Pre-assigning seemingly slower?
+        flatinds = tgtinds.reshape((q13,1)) + \
+          totalPar * tgtinds.reshape((1,q13))
+        # 32-33 us
+        AtAflat[flatinds.reshape(q13**2)] += localAtA.reshape((q13**2))
+      if reportTimeSteps:
+        t_now = time.time()
+        print(t_now-t_last)
+        t_last=t_now
+t_end=time.time()
+print(t_end)
+print(t_end-t_start)
+ 
+
+
 for Z in range(0,shape[0]) :
+  if not slow: break
   print ("Fitting, slice {} of {}".format(Z,shape[0]))
   (cIndZ, cZ) = coefArr[0][Z]
   for Y in range(0,shape[1]) :
@@ -171,6 +247,7 @@ pred = np.zeros(inimgdata.shape)
 
 # Same process as earlier, but without AtA calculation.
 for Z in range(0,shape[0]) :
+  if not slow: break
   print ("Projection, slice {} of {}".format(Z,shape[0]))
   (cIndZ, cZ) = coefArr[0][Z]
   for Y in range(0,shape[1]) :
@@ -185,6 +262,40 @@ for Z in range(0,shape[0]) :
       indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
       tgtinds = indsZ + indsY + indsX
       pred[Z,Y,X] = np.inner(P[tgtinds],coefs)
+
+
+for cIndZ in range(len(invCoefArr[0])):
+  if slow: break
+  firstZ, coefsZ = invCoefArr[0][cIndZ]
+  nindZ=coefsZ.shape[0]
+  for cIndY in range(len(invCoefArr[1])):
+    firstY, coefsY = invCoefArr[1][cIndY]
+    nindY=coefsY.shape[0]
+    for cIndX in range(len(invCoefArr[2])):
+      firstX, coefsX = invCoefArr[2][cIndX]
+      nindX=coefsX.shape[0]
+      print("{} {} {}".format(cIndZ,cIndY,cIndX))
+      localAtens = np.einsum("zi,yj,xk->zyxijk",
+                             coefsZ,coefsY,coefsX)
+      localA = localAtens.reshape((-1,q13))
+
+      indsX = indsXpattern + cIndX
+      indsY = indsYpattern + cIndY * kntsArr[2][0]
+      indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
+      tgtinds = indsZ + indsY + indsX
+      localP = P[tgtinds]
+      localAp = np.matmul(localA,localP)
+      localAp = localAp.reshape((nindZ,nindY,nindX))
+
+      pred[firstZ:firstZ+nindZ,
+           firstY:firstY+nindY,
+           firstX:firstX+nindX] = localAp
+
+t_end=time.time()
+print(t_end)
+print(t_end-t_start)
+
+
 
 imgresnii = nib.Nifti1Image(pred, inimg.affine, inimg.header)
 nib.save(imgresnii,outfile) 
