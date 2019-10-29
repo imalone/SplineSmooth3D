@@ -251,8 +251,15 @@ if cheatsmoothing:
 else:
     J=np.zeros(AtA.shape)
 
-AtAinv = np.linalg.inv(AtA+J)
-P = np.matmul(AtAinv,Atx)
+# Direct inverse:
+#AtAinv = np.linalg.inv(AtA+J)
+#P = np.matmul(AtAinv,Atx)
+
+# Cholesky and solver (can also just use solver, but
+# since we know AtA+J is symmetric.
+L = np.linalg(AtA+J)
+p1=np.solve(L, Atx)
+P=np.solve(L.T.conj(),p1)
 
 ## Need to calc AP now...
 pred = np.zeros(inimgdata.shape)
