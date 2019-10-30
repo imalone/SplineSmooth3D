@@ -137,21 +137,20 @@ def buildJ(dist,q=3):
   # more easily adapts to q!=3, however it needs a bit of furter work to
   # allow the mixed d2/dxdy that Shackleford has and which we need
   # for N3's thin-plate cost function, so sticking with this one.
+  from scipy.misc import factorial
   J = None
   for dx in range(0,3):
     for dy in range(0,3):
       for dz in range(0,3):
         if (dx+dy+dz)==2:
           orders=(dx,dy,dz)
-          # I have my doubts that Shackleford correctly has
-          # the desired 2* on the d2v/dxdy with this construction,
-          # unless it's hidden in the gamma(1) terms in eq. 18
-          # Individual Gamma(dx,dy,dz) in eq. 11 are
-          # = (d2v/dei/dej)^2, meaning we should be adding the
-          # double count for d2/dxdy + d2/dydx ourselves.
-          newJ = buildBigGammaMat(dist,orders)
-          if (dx==dy or dx==dz or dy==dz):
-            newJ *= 2
+          # Confirmed with Gregory Sharp that Shackleford paper is
+          # missing the 2* on the d2v/dxdy cross terms in eq. 18/19.
+          # fac is the appropriate term from thin plate bending energy,
+          # e.g. Wahba 1990, Spline Models for Observational Data,
+          # eq. 12.1.5, or the Sled N3 paper eq. 26
+          fac = factorial(2)/np.prod(factorial([dx,dy,dz]))
+          newJ = buildBigGammaMat(dist,orders) * fac
           if J is None:
             J = newJ
           else:
