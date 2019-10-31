@@ -42,11 +42,44 @@ def eval_nonzero_bspl(tfull,x,q=3,nu=0):
       nonZeroCoeffs = np.concatenate(([0],nonZeroCoeffs[0:q]))
   return coeffstart, nonZeroCoeffs
 
-def knots_over_domain(a,b,spacing,q=3):
-  nIntervals = np.ceil((b-a)/spacing).astype("int")
+
+
+def knots_over_domain(a,b,spacing,q=3, method="centre"):
+# Calculate the uniform knots for a given spline
+# order and spacing.
+# methods:
+# centre: place a knot in the middle of domain
+#   and then knots outwards at spacing to cover the whole
+#   domain
+# forcerange: supported intervals over the supplied domain only,
+#   if this isn't an exact fit then round up the required
+#   intervals and apply to the domain (resulting spacing
+#   will be reduced
+# runover: supported interval starts at a and ends on the
+#   first knot on or past b
+# 
+  ab = np.array([a,b]) # Because ints...
+  if method == "centre" or method == "center":
+    # Centre places a control point in the middle of the
+    # range, so will always have an even number of intervals
+    mid = np.average(ab)
+    midDist = np.max(np.abs(mid-ab))
+    halfIntervals = np.ceil(midDist/spacing).astype("int")
+    nIntervals = 2 * halfIntervals
+    internalEnds = mid + np.array([-1,1])*halfIntervals*spacing
+  elif method == "forcerange":
+    nIntervals = np.ceil((b-a)/spacing).astype("int")
+    internalEnds = ab
+  elif method == "runover":
+    nIntervals = np.ceil((b-a)/spacing).astype("int")
+    internalEnds = np.array([a,a+spacing*nIntervals])
+  else:
+    raise ValueError("Not a supported knots method: '{}'".format(method))
   nInternalKnots = nIntervals + 1
   nCoeffs = nIntervals + q
-  tinternal = np.linspace(a,b,nInternalKnots)
+  tinternal = np.linspace(internalEnds[0],
+                          internalEnds[1],
+                          nInternalKnots)
   tend = np.linspace(spacing,spacing*(q-1),q)
   tfull = np.concatenate((tinternal[0]-np.flip(tend,0),
                           tinternal,

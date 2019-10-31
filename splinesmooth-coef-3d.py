@@ -28,7 +28,7 @@ useA=False
 reportTimeSteps=False
 
 q = 3
-spacing = 50
+spacing = 75
 
 if realData:
     inimg = nib.load(infile)
@@ -343,7 +343,7 @@ elif nosmoothing:
 else:
     J=np.zeros(AtA.shape)
     Jflat=J.reshape(-1)
-    lsmooth = 0.1
+    lsmooth = 0.01
     smallJ = buildJ(spacing) * lsmooth
     for cIndZ in range(len(invCoefArr[0])):
       for cIndY in range(len(invCoefArr[1])):
@@ -358,7 +358,10 @@ else:
             totalPar * tgtinds.reshape((1,q13))
      
           Jflat[flatinds.reshape(-1)] += smallJ.reshape(-1)
-
+    nIntervals = np.prod(list(map(len,invCoefArr)))
+    nPoints = np.prod(shape) # fix if using mask
+    J = J #* spacing
+    
 
 # Direct inverse:
 #AtAinv = np.linalg.inv(AtA+J)
