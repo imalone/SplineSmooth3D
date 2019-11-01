@@ -154,7 +154,7 @@ class SplineSmooth3D:
             t_new =time.time()
             t_step=t_last - t_new
             t_last=t_new
-            print("{} {} {}: {}seconds".format(cIndZ,cIndY,cIndX,
+            print("{} {} {}: {:.2g}seconds".format(cIndZ,cIndY,cIndX,
                                            t_step))
 
     if reportingLevel >= 1:
@@ -240,7 +240,7 @@ class SplineSmooth3D:
             t_new=time.time()
             t_step=t_new-t_last
             t_last=t_new
-            print("{} {} {}: {}seconds".format(cIndZ,cIndY,cIndX,
+            print("{} {} {}: {:.2g}seconds".format(cIndZ,cIndY,cIndX,
                                              t_step))
     if reportingLevel >= 1:
       t_now = time.time()
@@ -268,8 +268,6 @@ class SplineSmooth3D:
     for cIndZ in range(len(invCoefArr[0])):
       for cIndY in range(len(invCoefArr[1])):
         for cIndX in range(len(invCoefArr[2])):
-          print("{} {} {}".format(cIndZ,cIndY,cIndX))
-
           indsX = indsXpattern + cIndX
           indsY = indsYpattern + cIndY * kntsArr[2][0]
           indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
@@ -282,7 +280,7 @@ class SplineSmooth3D:
             t_new=time.time()
             t_step=t_new-t_last
             t_last=t_new
-            print("{} {} {}: {}seconds".format(cIndZ,cIndY,cIndX,
+            print("{} {} {}: {:.2g}seconds".format(cIndZ,cIndY,cIndX,
                                              t_step))
     if reportingLevel >= 1:
       t_now = time.time()
@@ -463,7 +461,6 @@ else:
         for X in range(0,testshape[2]) :
           dx2 = (X-testshape[2]/2.0)**2
           inimgdata[Z][Y][X] = dx2 + dy2 + dz2
-          #print("{} {} {} : {} {} {} : {}".format(X,Y,Z,dx2,dy2,dz2,inimgdata[Z][Y][X]))
     aff = np.diag([1]*4)
     inimg = nib.nifti1.Nifti1Image(inimgdata,aff)
     nib.save(inimg,testfile) 
@@ -479,7 +476,7 @@ q = 3
 spacing = 75
 
 splsm3d = SplineSmooth3D(inimgdata, voxsizes, spacing,
-                         Lambda=None, dofit=False)
+                         Lambda=0.01, dofit=False)
 
 
 print("Fitting")
