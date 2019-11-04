@@ -62,6 +62,50 @@ class SplineSmooth3D:
     return None
 
 
+  def coefIntervalIter(self, reportingLevel=0):
+    # This iterator method is used for the common iteration loop
+    # over supported intervals: generates target indices into
+    # the parameter array (tgtinds), the coefficient lists to form
+    # the local support tensor (coefs*), data ranges (range*)
+    # and coefficient starting indices in each dimension (cInd*),
+    # the last mostly for debugging purposes
+    kntsArr=self.kntsArr
+    invCoefArr=self.invCoefArr
+    indsXpattern = self.indsXpattern
+    indsYpattern = self.indsYpattern
+    indsZpattern = self.indsZpattern
+    t_start=time.time()
+    t_last=t_start
+    for cIndZ in range(len(invCoefArr[0])):
+      firstZ, coefsZ = invCoefArr[0][cIndZ]
+      nindZ=coefsZ.shape[0]
+      for cIndY in range(len(invCoefArr[1])):
+        firstY, coefsY = invCoefArr[1][cIndY]
+        nindY=coefsY.shape[0]
+        for cIndX in range(len(invCoefArr[2])):
+          firstX, coefsX = invCoefArr[2][cIndX]
+          nindX=coefsX.shape[0]
+
+          indsX = indsXpattern + cIndX
+          indsY = indsYpattern + cIndY * kntsArr[2][0]
+          indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
+          tgtinds = indsZ + indsY + indsX
+    
+          rangeZ =[firstZ,firstZ+nindZ]
+          rangeY =[firstY,firstY+nindY]
+          rangeX =[firstX,firstX+nindX]
+          if reportingLevel >=2 :
+            t_new=time.time()
+            t_step=t_new-t_last
+            t_last=t_new
+            print("{} {} {}: {:.2g}seconds".format(cIndZ,cIndY,cIndX,
+                                             t_step))
+          yield cIndZ,cIndY,cIndX, \
+          coefsZ,coefsY,coefsX, \
+          rangeZ,rangeY,rangeX, \
+          tgtinds
+
+
   def fit(self,data=None, reportingLevel=0):
     # reportingLevel: 0 none, 1 overall timing,
     # 2 by interval
@@ -92,54 +136,37 @@ class SplineSmooth3D:
     indsYpattern = self.indsYpattern
     indsZpattern = self.indsZpattern
 
-    for cIndZ in range(len(invCoefArr[0])):
-      firstZ, coefsZ = invCoefArr[0][cIndZ]
-      nindZ=coefsZ.shape[0]
-      for cIndY in range(len(invCoefArr[1])):
-        firstY, coefsY = invCoefArr[1][cIndY]
-        nindY=coefsY.shape[0]
-        for cIndX in range(len(invCoefArr[2])):
-          firstX, coefsX = invCoefArr[2][cIndX]
-          nindX=coefsX.shape[0]
-          localData = data[firstZ:firstZ+nindZ,
-                           firstY:firstY+nindY,
-                           firstX:firstX+nindX]
+    for cIndZ,cIndY,cIndX, \
+    coefsZ,coefsY,coefsX, \
+    rangeZ,rangeY,rangeX, \
+    tgtinds in self.coefIntervalIter(reportingLevel):
+      localData = data[rangeZ[0]:rangeZ[1],
+                       rangeY[0]:rangeY[1],
+                       rangeX[0]:rangeX[1]]
 
-          # This is what we're actually doing, below, and may help
-          # explain what might seem an odd order of indices
-          #localAtens = np.einsum("zi,yj,xk->zyxijk",
-          #                       coefsZ,coefsY,coefsX)
-          #localA = localAtens.reshape((-1,q13))
-          #localAtx = np.matmul(localA.transpose(),localData.reshape(-1))
-          #localAtA = np.matmul(localA.transpose(),localA)
-          # .encode("ascii","ignore") is necessary to avoid a
-          # TypeError due to  from __future__ import (unicode_literals)
-          localAtx = np.einsum(
-            "xc,yb,za,zyx->abc".encode("ascii","ignore"),
-            coefsX,coefsY,coefsZ,
-            localData, optimize=True).reshape((-1))
+      # This is what we're actually doing, below, and may help
+      # explain what might seem an odd order of indices
+      #localAtens = np.einsum("zi,yj,xk->zyxijk",
+      #                       coefsZ,coefsY,coefsX)
+      #localA = localAtens.reshape((-1,q13))
+      #localAtx = np.matmul(localA.transpose(),localData.reshape(-1))
+      #localAtA = np.matmul(localA.transpose(),localA)
+      # .encode("ascii","ignore") is necessary to avoid a
+      # TypeError due to  from __future__ import (unicode_literals)
+      localAtx = np.einsum(
+        "xc,yb,za,zyx->abc".encode("ascii","ignore"),
+        coefsX,coefsY,coefsZ,
+        localData, optimize=True).reshape((-1))
 
-          indsX = indsXpattern + cIndX
-          indsY = indsYpattern + cIndY * kntsArr[2][0]
-          indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
-          tgtinds = indsZ + indsY + indsX
-      
-          Atx[tgtinds] += localAtx
-          if needAtA:
-            localAtA = np.einsum(
-              "xc,yb,za,zi,yj,xk->abcijk".encode("ascii","ignore"),
-              coefsX,coefsY,coefsZ,
-              coefsZ,coefsY,coefsX, optimize=True ).reshape((q13,q13))
-            flatinds = tgtinds.reshape((q13,1)) + \
-                       totalPar * tgtinds.reshape((1,q13))
-            AtAflat[flatinds.reshape(q13**2)] += localAtA.reshape((q13**2))
-
-          if reportingLevel >= 2:
-            t_new =time.time()
-            t_step=t_last - t_new
-            t_last=t_new
-            print("{} {} {}: {:.2g}seconds".format(cIndZ,cIndY,cIndX,
-                                           t_step))
+      Atx[tgtinds] += localAtx
+      if needAtA:
+        localAtA = np.einsum(
+          "xc,yb,za,zi,yj,xk->abcijk".encode("ascii","ignore"),
+          coefsX,coefsY,coefsZ,
+          coefsZ,coefsY,coefsX, optimize=True ).reshape((q13,q13))
+        flatinds = tgtinds.reshape((q13,1)) + \
+                   totalPar * tgtinds.reshape((1,q13))
+        AtAflat[flatinds.reshape(q13**2)] += localAtA.reshape((q13**2))
 
     if reportingLevel >= 1:
       t_now = time.time()
@@ -169,12 +196,11 @@ class SplineSmooth3D:
     return self.P
 
 
+
   def predict(self,reportingLevel=0):
     if self.P is None:
       solve(reportingLevel=reportingLevel)
     P=self.P
-    kntsArr=self.kntsArr
-    invCoefArr=self.invCoefArr
     q=self.q
     q1=q+1
     q13=q1**3
@@ -187,49 +213,35 @@ class SplineSmooth3D:
     indsYpattern = self.indsYpattern
     indsZpattern = self.indsZpattern
 
-    for cIndZ in range(len(invCoefArr[0])):
-      firstZ, coefsZ = invCoefArr[0][cIndZ]
-      nindZ=coefsZ.shape[0]
-      for cIndY in range(len(invCoefArr[1])):
-        firstY, coefsY = invCoefArr[1][cIndY]
-        nindY=coefsY.shape[0]
-        for cIndX in range(len(invCoefArr[2])):
-          firstX, coefsX = invCoefArr[2][cIndX]
-          nindX=coefsX.shape[0]
+    for cIndZ,cIndY,cIndX, \
+    coefsZ,coefsY,coefsX, \
+    rangeZ,rangeY,rangeX, \
+    tgtinds in self.coefIntervalIter(reportingLevel):
+      localP = P[tgtinds]
 
-          indsX = indsXpattern + cIndX
-          indsY = indsYpattern + cIndY * kntsArr[2][0]
-          indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
-          tgtinds = indsZ + indsY + indsX
-          localP = P[tgtinds]
+      # Again, finding the local tensor, then vectorising,
+      # without the overall einsum:
+      # localAtens = np.einsum("zi,yj,xk->zyxijk",
+      #                       coefsZ,coefsY,coefsX)
+      # localA = localAtens.reshape((-1,q13))
+      # localAp = np.matmul(localA,localP)
+      # localAp = localAp.reshape((nindZ,nindY,nindX))
 
-          # Again, finding the local tensor, then vectorising,
-          # without the overall einsum:
-          # localAtens = np.einsum("zi,yj,xk->zyxijk",
-          #                       coefsZ,coefsY,coefsX)
-          # localA = localAtens.reshape((-1,q13))
-          # localAp = np.matmul(localA,localP)
-          # localAp = localAp.reshape((nindZ,nindY,nindX))
+      localAp = np.einsum(
+        "zi,yj,xk,ijk->zyx".encode("ascii","ignore"),
+        coefsZ,coefsY,coefsX,
+        localP.reshape((q1,q1,q1)),
+        optimize=True )
 
-          localAp = np.einsum(
-            "zi,yj,xk,ijk->zyx".encode("ascii","ignore"),
-            coefsZ,coefsY,coefsX,
-            localP.reshape((q1,q1,q1)),
-            optimize=True )
-
-          pred[firstZ:firstZ+nindZ,
-               firstY:firstY+nindY,
-               firstX:firstX+nindX] = localAp
-          if reportingLevel >=2 :
-            t_new=time.time()
-            t_step=t_new-t_last
-            t_last=t_new
-            print("{} {} {}: {:.2g}seconds".format(cIndZ,cIndY,cIndX,
-                                             t_step))
+      pred[rangeZ[0]:rangeZ[1],
+           rangeY[0]:rangeY[1],
+           rangeX[0]:rangeX[1]] = localAp
     if reportingLevel >= 1:
       t_now = time.time()
       print(t_now-t_start)
     return pred
+
+
     
 
   def buildFullJ(self,reportingLevel=0):
@@ -250,23 +262,14 @@ class SplineSmooth3D:
     totalPar=self.totalPar
     t_start=time.time()
     t_last=t_start
-    for cIndZ in range(len(invCoefArr[0])):
-      for cIndY in range(len(invCoefArr[1])):
-        for cIndX in range(len(invCoefArr[2])):
-          indsX = indsXpattern + cIndX
-          indsY = indsYpattern + cIndY * kntsArr[2][0]
-          indsZ = indsZpattern + cIndZ * kntsArr[2][0] * kntsArr[1][0]
-          tgtinds = indsZ + indsY + indsX
-          flatinds = tgtinds.reshape((q13,1)) + \
-            totalPar * tgtinds.reshape((1,q13))
+    for cIndZ,cIndY,cIndX, \
+    coefsZ,coefsY,coefsX, \
+    rangeZ,rangeY,rangeX, \
+    tgtinds in self.coefIntervalIter(reportingLevel):
+      flatinds = tgtinds.reshape((q13,1)) + \
+                 totalPar * tgtinds.reshape((1,q13))
      
-          Jflat[flatinds.reshape(-1)] += Jsub.reshape(-1)
-          if reportingLevel >=2 :
-            t_new=time.time()
-            t_step=t_new-t_last
-            t_last=t_new
-            print("{} {} {}: {:.2g}seconds".format(cIndZ,cIndY,cIndX,
-                                             t_step))
+      Jflat[flatinds.reshape(-1)] += Jsub.reshape(-1)
     if reportingLevel >= 1:
       t_now = time.time()
       print(t_now-t_start)
