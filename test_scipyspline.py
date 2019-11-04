@@ -73,6 +73,16 @@ def knots_over_domain(a,b,spacing,q=3, method="centre"):
   elif method == "runover":
     nIntervals = np.ceil((b-a)/spacing).astype("int")
     internalEnds = np.array([a,a+spacing*nIntervals])
+  elif method == "minc":
+    eps=1.0e-14 
+    nIntervals = np.ceil((b-a)/(spacing*(1+eps))).astype("int")
+    nBasis = nIntervals+3
+    nKnots = nBasis+4
+    start = 0.5*(a + b - spacing * (nBasis+3))
+    knots = np.zeros(nKnots)
+    for j in range(0,nKnots):
+      knots[j] = start + spacing * j
+    return nBasis, knots
   else:
     raise ValueError("Not a supported knots method: '{}'".format(method))
   nInternalKnots = nIntervals + 1
