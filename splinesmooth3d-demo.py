@@ -49,18 +49,21 @@ voxsizes=nib.affines.voxel_sizes(inimg.affine)
 print("Data loaded, set up class")
 
 q = 3
-spacing = 75
-
-splsm3d = SplineSmooth3D(inimgdata, voxsizes, spacing,
-                         Lambda=0.01, dofit=False)
 
 
-print("Fitting")
-splsm3d.fit(reportingLevel=2)
-print("Solving")
-splsm3d.solve(reportingLevel=2)
-print("Predicting")
-pred = splsm3d.predict(reportingLevel=2)
+for spacing in [72.5,75,77.5]:
+    dm="minc"
+    splsm3d = SplineSmooth3D(inimgdata, voxsizes, spacing,
+                             Lambda=0.01, dofit=False,
+                             domainMethod=dm)
+    print("Fitting")
+    splsm3d.fit(reportingLevel=2)
+    #for L in [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]:
+    for L in [0.000001, 0.000005]:
+        print("Solving")
+        splsm3d.solve(reportingLevel=1,Lambda=L)
+        print("Predicting S:{} L:{}".format(spacing,L))
+        pred = splsm3d.predict(reportingLevel=1)
 
-imgresnii = nib.Nifti1Image(pred, inimg.affine, inimg.header)
-nib.save(imgresnii,outfile)
+        imgresnii = nib.Nifti1Image(pred, inimg.affine, inimg.header)
+        nib.save(imgresnii,"test-dm{}-S{}-L{}.nii.gz".format(dm,spacing,L))
