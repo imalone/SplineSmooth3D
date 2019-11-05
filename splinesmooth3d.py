@@ -142,6 +142,9 @@ class SplineSmooth3D:
     indsYpattern = self.indsYpattern
     indsZpattern = self.indsZpattern
 
+    AtAOptPath=None
+    AtxOptPath=None
+
     for cIndZ,cIndY,cIndX, \
     coefsZ,coefsY,coefsX, \
     rangeZ,rangeY,rangeX, \
@@ -161,18 +164,33 @@ class SplineSmooth3D:
       #localAtA = np.matmul(localA.transpose(),localA)
       # .encode("ascii","ignore") is necessary to avoid a
       # TypeError due to  from __future__ import (unicode_literals)
+
+      optimize="optimal".encode("ascii","ignore") # No, really
+
+      AtxSum = "xc,yb,za,zyx,zyx->abc".encode("ascii","ignore")
+      if AtxOptPath is None:
+        AtxOptPath = np.einsum_path(AtxSum,
+          coefsX,coefsY,coefsZ,
+          localData, localMask, optimize=optimize)[0]
       localAtx = np.einsum(
-        "xc,yb,za,zyx,zyx->abc".encode("ascii","ignore"),
+        AtxSum,
         coefsX,coefsY,coefsZ,
-        localData, localMask, optimize=True).reshape((-1))
+        localData, localMask, optimize=AtxOptPath).reshape((-1))
 
       Atx[tgtinds] += localAtx
       if needAtA:
-        localAtA = np.einsum(
-          "xc,yb,za,zi,yj,xk,zyx->abcijk".encode("ascii","ignore"),
+        AtASum = "xc,yb,za,zi,yj,xk,zyx->abcijk".encode("ascii","ignore") 
+        if AtAOptPath is None:
+          AtAOptPath = np.einsum_path(
+          AtASum,
           coefsX,coefsY,coefsZ,
           coefsZ,coefsY,coefsX,
-          localMask, optimize=True ).reshape((q13,q13))
+          localMask, optimize=optimize )[0]
+        localAtA = np.einsum(
+          AtASum,
+          coefsX,coefsY,coefsZ,
+          coefsZ,coefsY,coefsX,
+          localMask, optimize=AtAOptPath ).reshape((q13,q13))
         flatinds = tgtinds.reshape((q13,1)) + \
                    totalPar * tgtinds.reshape((1,q13))
         AtAflat[flatinds.reshape(q13**2)] += localAtA.reshape((q13**2))
