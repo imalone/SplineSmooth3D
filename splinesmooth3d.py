@@ -234,8 +234,8 @@ class SplineSmooth3D:
         # equivalent internal Lambda to a requested Lambda_minc
         # we therefore need to multiply by spacing and divide
         # by 6^6.
-        # Todo: test this against MINC on a range of image FOV,
-        # spacings, lambda, and resolutions.
+        # Confirmed: tested this against MINC on a range of
+        # image FOV, spacings, lambda, and resolutions.
         lambdaFac *= self.spacing / (6**3)**2
       L = np.linalg.cholesky(AtA + J * lambdaFac)
     p1=np.linalg.solve(L, Atx)
