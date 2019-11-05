@@ -127,6 +127,8 @@ class SplineSmooth3D:
       self.AtA = np.zeros((totalPar,totalPar))
       AtA = self.AtA
       AtAflat = AtA.reshape((AtA.shape[0]*AtA.shape[1]))
+    else:
+      AtA = None
     self.Atx = np.zeros(totalPar)
     Atx = self.Atx
     kntsArr = self.kntsArr
@@ -244,7 +246,7 @@ class SplineSmooth3D:
 
   def predict(self,reportingLevel=0):
     if self.P is None:
-      solve(reportingLevel=reportingLevel)
+      self.solve(reportingLevel=reportingLevel)
     P=self.P
     q=self.q
     q1=q+1
