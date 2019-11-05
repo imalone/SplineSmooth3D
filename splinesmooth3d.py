@@ -176,7 +176,7 @@ class SplineSmooth3D:
 
 
     
-  def solve(self,Lambda=None, reportingLevel=0):
+  def solve(self,Lambda=None, mincLambda=True, reportingLevel=0):
     if Lambda is None:
       Lambda = self.Lambda
     if Lambda is not None and self.J is None:
@@ -190,7 +190,25 @@ class SplineSmooth3D:
     if Lambda is None:
       L = np.linalg.cholesky(AtA)
     else:
-      L = np.linalg.cholesky(AtA + J * Lambda)
+      lambdaFac = Lambda
+      if mincLambda:
+        # MINC calculates its bending energy integrals without
+        # using knot distances, so the (d2f/dx2)^2 volume
+        # integral that should have units 1/spacing doesn't.
+        # Since our J is calculated with spacing, we need to
+        # multiply back.
+        # Additionally MINC also calculates its AtA matrix
+        # with just the cube values in the Bspline coefficents,
+        # not the 1/6 normally used (e.g. B1(u) = (1-u)^3/6)
+        # this means its AtA (product of three tensors squared)
+        # is a factor 6^3^2 higher than ours, to get the
+        # equivalent internal Lambda to a requested Lambda_minc
+        # we therefore need to multiply by spacing and divide
+        # by 6^6.
+        # Todo: test this against MINC on a range of image FOV,
+        # spacings, lambda, and resolutions.
+        lambdaFac *= self.spacing / (6**3)**2
+      L = np.linalg.cholesky(AtA + J * lambdaFac)
     p1=np.linalg.solve(L, Atx)
     self.P=np.linalg.solve(L.T.conj(),p1)
     return self.P
@@ -367,7 +385,7 @@ class SplineSmooth3D:
     if q is None:
       q=self.q
     if spacing is None:
-      q=self.spacing
+      spacing=self.spacing
     gammaZ = self.buildGammaMat(order=orders[0])
     gammaY = self.buildGammaMat(order=orders[1])
     gammaX = self.buildGammaMat(order=orders[2])
@@ -394,8 +412,8 @@ class SplineSmooth3D:
     if q is None:
       q=self.q
     if spacing is None:
-      q=self.spacing
-
+      spacing=self.spacing
+    
     from scipy.misc import factorial
     J = None
     # fac: Confirmed with Gregory Sharp that Shackleford paper is
