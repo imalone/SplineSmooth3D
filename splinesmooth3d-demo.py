@@ -13,6 +13,7 @@ from splinesmooth3d import SplineSmooth3D
 
 infile="adni3-1006.nii.gz"
 outfile="test-splinesmooth3d.nii.gz"
+maskfile="adni3-1006_mask.nii.gz"
 testfile="test-model.nii.gz"
 realData=True
 # Storing the whole A matrix is potentially faster, but needs *lots* of
@@ -26,6 +27,8 @@ print("Start")
 if realData:
     inimg = nib.load(infile)
     inimgdata = inimg.get_fdata()
+    maskimg = nib.load(maskfile)
+    mask = maskimg.get_fdata()
 else:
     testshape=(50,100,150)
     inimgdata=np.zeros(testshape)
@@ -39,7 +42,8 @@ else:
           inimgdata[Z][Y][X] = dx2 + dy2 + dz2
     aff = np.diag([1]*4)
     inimg = nib.nifti1.Nifti1Image(inimgdata,aff)
-    nib.save(inimg,testfile) 
+    nib.save(inimg,testfile)
+    mask=None
 
 
 
@@ -55,15 +59,15 @@ for spacing in [75]:
     dm="minc"
     splsm3d = SplineSmooth3D(inimgdata, voxsizes, spacing,
                              Lambda=0.01, dofit=False,
-                             domainMethod=dm)
+                             domainMethod=dm, mask=mask)
     print("Fitting")
     splsm3d.fit(reportingLevel=2)
     #for L in [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]:
-    for L in [0.00099, 0.0010, 0.00101]:
+    for L in [0.010]:
         print("Solving")
         splsm3d.solve(reportingLevel=1,Lambda=L)
         print("Predicting S:{} L:{}".format(spacing,L))
         pred = splsm3d.predict(reportingLevel=1)
 
         imgresnii = nib.Nifti1Image(pred, inimg.affine, inimg.header)
-        nib.save(imgresnii,"test-5-dm{}-S{}-L{:.05f}.nii.gz".format(dm,spacing,L))
+        nib.save(imgresnii,"test-7-dm{}-S{}-L{:.05f}.nii.gz".format(dm,spacing,L))

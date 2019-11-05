@@ -54,6 +54,11 @@ class SplineSmooth3D:
       raise ValueError("SplineSmooth3D, knot spacing "+
                        "must be > 0")
 
+    if mask is None:
+      self.mask = np.ones(self.shape,dtype=self.data.dtype)
+    else:
+      self.mask = mask.astype(self.data.dtype,copy=True)
+
     self.setupKCP()
     if Lambda is not None:
       self.Jsub = self.buildJ()
@@ -109,6 +114,7 @@ class SplineSmooth3D:
   def fit(self,data=None, reportingLevel=0):
     # reportingLevel: 0 none, 1 overall timing,
     # 2 by interval
+    mask = self.mask
     if (data is None):
       data = self.data
     if (not data.shape == self.data.shape):
@@ -143,7 +149,9 @@ class SplineSmooth3D:
       localData = data[rangeZ[0]:rangeZ[1],
                        rangeY[0]:rangeY[1],
                        rangeX[0]:rangeX[1]]
-
+      localMask = mask[rangeZ[0]:rangeZ[1],
+                       rangeY[0]:rangeY[1],
+                       rangeX[0]:rangeX[1]]
       # This is what we're actually doing, below, and may help
       # explain what might seem an odd order of indices
       #localAtens = np.einsum("zi,yj,xk->zyxijk",
@@ -154,16 +162,17 @@ class SplineSmooth3D:
       # .encode("ascii","ignore") is necessary to avoid a
       # TypeError due to  from __future__ import (unicode_literals)
       localAtx = np.einsum(
-        "xc,yb,za,zyx->abc".encode("ascii","ignore"),
+        "xc,yb,za,zyx,zyx->abc".encode("ascii","ignore"),
         coefsX,coefsY,coefsZ,
-        localData, optimize=True).reshape((-1))
+        localData, localMask, optimize=True).reshape((-1))
 
       Atx[tgtinds] += localAtx
       if needAtA:
         localAtA = np.einsum(
-          "xc,yb,za,zi,yj,xk->abcijk".encode("ascii","ignore"),
+          "xc,yb,za,zi,yj,xk,zyx->abcijk".encode("ascii","ignore"),
           coefsX,coefsY,coefsZ,
-          coefsZ,coefsY,coefsX, optimize=True ).reshape((q13,q13))
+          coefsZ,coefsY,coefsX,
+          localMask, optimize=True ).reshape((q13,q13))
         flatinds = tgtinds.reshape((q13,1)) + \
                    totalPar * tgtinds.reshape((1,q13))
         AtAflat[flatinds.reshape(q13**2)] += localAtA.reshape((q13**2))
