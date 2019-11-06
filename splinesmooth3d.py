@@ -11,18 +11,109 @@ from test_scipyspline import knots_over_domain, eval_nonzero_bspl
 
 
 class SplineSmooth3D:
+  """3D smoothing tensor B-spline class for fields defined as numpy
+  arrays, with thin-plate spline bending regularisation.
+
+  Intended to replace spline smoothing of Sled et al. TMI 17, 1998,
+  follows some details of https://github.com/BIC-MNI/N3/ with regard
+  to knot placement. Use of Cholesky decomp for solver, Green and
+  Silverman, Nonparametric regression[...] (1994); Wahba, Spline
+  Models for Observational Data (1990). Analytic form of
+  thin-plate-spline penalty Shackleford et al. LNCS 7511 MICCAI 2012
+  (with correction to match form used in Sled, matching Wahba and
+  other sources).
+
+  Parameters
+  ----------
+    file_loc : str
+    The file location of the spreadsheet
+    print_cols : bool, optional
+    A flag used to print the columns to the console (default is False)
+
+  data : ndarray
+      3D array matching shape of data to smooth
+  voxsizes : tuple
+      tuple of floats for voxel size in each dimension
+  spacing : float
+      knot spacing to use, units should match those of `voxsizes`
+  mask : ndarray or None, optional
+      ndarray same shape as `data`, 0 for exclude, 1 for include. May
+      be of any type, including boolean
+  q : int, optional
+      Spline degree, only q=3 (cubic) supported by most functions in
+      this class
+  domainMethod : str, optional
+      Method to use for knot placement, see knots_over_domain, default
+      'centre'. Certain domainMethod values will produce different
+      spacings.
+  Lambda : float or None, optional:
+      Smoothing parameter. Default None: don't use smoothing. Images
+      without full support (when using masks) may fail to solve.
+  dofit : bool, optional
+      Fit on initialisation (with supplied data), default True.
+
+
+  Attributes
+  ----------
+  data : ndarray
+      Last data passed to fit
+  shape : tuple
+      Shape of data, set at instantiation
+  voxsizes : tuple
+      Dimensions of voxels in each direction
+  spacing : float
+      Knot spacing
+  mask : ndarray or None
+      Set at instantion, array same shape as data to fit
+  q : int
+      Spline degree, only q=3 (cubic) supported by most
+      functions in this class
+  domainMethod : str
+      Method to use for knot placement, see knots_over_domain
+  Lambda : float
+      Requested spacing (same units as voxsize) for knots/control
+      points. Certain domainMethod values will produce different
+      spacings.
+  mincLambda : bool
+      # Not implemented yet, see solve. Whether to use an adjstment
+      that makes lambda values compatible with MINC spline_smooth
+  P : ndarray
+      Fitted parameters as vector
+  Atx : ndarray
+      data projected to parameter space
+  AtA : ndarray
+      defines inner product on spline coefficients
+  Jsub : ndarray
+      thin-plate-energy matrix for the coefficients supporting
+      an interval
+  J : ndarray
+      thin-plate-energy matrix for all coefficients
+
+  Methods
+  -------
+  fit(data,reportingLevel=0)
+      Fit new data. Invalidates current parameter solution. First use
+      in a new instance will also build inner product matrix, re-running
+      fit for updated data is faster than creating a new instance to fit.
+  solve(Lambda=None, mincLambda=True, reportingLevel=0):
+      Solve for parameters. Will fit current data first if not yet done.
+      Can be re-run with a different value of Lambda to change smoothing.
+  predict(reportingLevel=0)
+      Predict smoothed data from current parameters. Will run all prior
+      steps if not already performed.
+  #coefIntervalIter(reportingLevel=0)
+  #buildFullJ(reportingLevel=0):
+  #setupKCP(self):
+  #buildGammaMat(self, order, spacing=None, q=None):
+  #buildBigGammaMat(self, orders, spacing=None, q=None):
+  #buildJ(self,spacing=None,q=None):
+  #invertCoefList (coefList):
+  """
+
   def __init__(self,data,voxsizes,spacing,mask=None,
                q=3,
                domainMethod="centre",
                Lambda=None, dofit=True):
-    # data, 3D numpy array of data to fit
-    # voxsizes, voxel size in each array direction
-    # spacing spacing for control points
-    # mask optional mask for fitting
-    # q spline degree, q=3 cubic
-    # domainMethod, how to place control points, see knots_over_domain
-    # Lambda smoothing parameter
-    # dofit whether to fit on initialisation
     self.data = data
     self.shape = data.shape
     self.voxsizes = voxsizes
@@ -68,12 +159,29 @@ class SplineSmooth3D:
 
 
   def coefIntervalIter(self, reportingLevel=0):
-    # This iterator method is used for the common iteration loop
-    # over supported intervals: generates target indices into
-    # the parameter array (tgtinds), the coefficient lists to form
-    # the local support tensor (coefs*), data ranges (range*)
-    # and coefficient starting indices in each dimension (cInd*),
-    # the last mostly for debugging purposes
+    """Generator for the common iteration loop over supported intervals
+
+    Parameters
+    ----------
+    reportingLevel : int, optional
+    If >=2 then report timing information for each inner loop
+
+    Yields
+    -------
+    cIndZ,cIndY,cIndX : int
+        Coefficient starting indices in each dimension (mainly
+        for debugging)
+    coefsZ,coefsY,coefsX : ndarray
+        matrices of control point coefficients by direction for
+        each grid step along that direction within the supported
+        interval
+    rangeZ,rangeY,rangeX : list
+        pairs of indices representing data range of supported interval
+        in each dimension
+    tgtinds : ndarray
+        target indices into the parameter array for control points
+        supporting this interval
+    """
     kntsArr=self.kntsArr
     invCoefArr=self.invCoefArr
     indsXpattern = self.indsXpattern
@@ -112,6 +220,35 @@ class SplineSmooth3D:
 
 
   def fit(self,data=None, reportingLevel=0):
+    """fit current data, or update current data and fit
+
+    fit does not solve for parameters, it calculates the projection of
+    data to parameter space `Atx`, and if necessary (on the first run)
+    the parameter inner product matrix `AtA`. This means re-using fit
+    for updated data is quicker (about by about three times) than
+    using a fresh instance. However the `AtA` matrix depends on the
+    shape of data, the mask and the knot placement, a new instance is
+    required if any of these are to be changed.
+
+    Running fit will invalidate the current parameters solution `P`.
+
+    Parameters
+    ----------
+    data : ndarray : optional
+        New data to fit, if no new data then will fit the previously
+        supplied data.
+    reportingLevel : int, optional
+        If >=1 then report time taken for the fitting loop, if >=2
+        then will also report time for each inner loop (each interval)
+
+    Returns
+    -------
+    AtA : ndarray
+        Parameter inner product matrix
+    Atx : ndarray
+        Projection of data to parameter space
+
+    """
     # reportingLevel: 0 none, 1 overall timing,
     # 2 by interval
     mask = self.mask
@@ -121,15 +258,14 @@ class SplineSmooth3D:
       raise ValueError("Shape of data passed to fit must"+
                        "match that of data used to initialise")
     self.data=data
+    self.P=None # Invalidate P
     totalPar = self.totalPar
     needAtA = self.AtA is None
     if needAtA:
       self.AtA = np.zeros((totalPar,totalPar))
-      AtA = self.AtA
       AtAflat = AtA.reshape((AtA.shape[0]*AtA.shape[1]))
-    else:
-      AtA = None
     self.Atx = np.zeros(totalPar)
+    AtA = self.AtA
     Atx = self.Atx
     kntsArr = self.kntsArr
     invCoefArr = self.invCoefArr
