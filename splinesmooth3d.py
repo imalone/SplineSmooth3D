@@ -249,8 +249,6 @@ class SplineSmooth3D:
         Projection of data to parameter space
 
     """
-    # reportingLevel: 0 none, 1 overall timing,
-    # 2 by interval
     mask = self.mask
     if (data is None):
       data = self.data
@@ -263,9 +261,9 @@ class SplineSmooth3D:
     needAtA = self.AtA is None
     if needAtA:
       self.AtA = np.zeros((totalPar,totalPar))
-      AtAflat = AtA.reshape((AtA.shape[0]*AtA.shape[1]))
     self.Atx = np.zeros(totalPar)
     AtA = self.AtA
+    AtAflat = AtA.reshape((AtA.shape[0]*AtA.shape[1]))
     Atx = self.Atx
     kntsArr = self.kntsArr
     invCoefArr = self.invCoefArr
@@ -275,10 +273,6 @@ class SplineSmooth3D:
 
     q1=self.q+1
     q13 = q1**3
-
-    indsXpattern = self.indsXpattern
-    indsYpattern = self.indsYpattern
-    indsZpattern = self.indsZpattern
 
     AtAOptPath=None
     AtxOptPath=None
@@ -342,6 +336,41 @@ class SplineSmooth3D:
 
     
   def solve(self,Lambda=None, mincLambda=True, reportingLevel=0):
+    """determine paramters for current data fit
+
+    solve will update the currently fitted parameters, if necessary
+    running `fit()` first. It can be re-run with different Lambda
+    smoothing parameters to allow producing different predictions
+    without the need for re-fitting.
+
+    Parameters
+    ----------
+    Lambda : float or None, optional
+        The weighting to use for the bending energy. If None or not
+        supplied then the value set at creation is used. If it was
+        None at object creation then no smoothing is used (this may
+        fail to solve if insufficient data coverage).
+    mincLambda : bool, optional
+        Default True. There are two quirks to the MINC N3 definition
+        of Lambda that cause it to be a very different amount (by
+        a factor of around 500-50000) of smoothing to what might be
+        expected: first bending energy is computed purely on the
+        scaled knot locations, meaning both volume and derivative
+        scaling terms are missing, second the spline basis functions
+        are not normalised, leading to a factor of 6^2 in AtA for
+        each dimension (6^6=46656 overall). By default we produce
+        the same smoothing for a given Lambda that MINC will,
+        internally the Lambda used is Lambda_{MINC}*spacing/(6^6).
+    reportingLevel : int, optional
+        If >=1 then report time taken for the fitting loop, if >=2
+        then will also report time for each inner loop (each interval)
+
+    Returns
+    -------
+    P : ndarray
+        Fitted control point parameters, as vector
+
+    """
     if Lambda is None:
       Lambda = self.Lambda
     if Lambda is not None and self.J is None:
@@ -381,6 +410,23 @@ class SplineSmooth3D:
 
 
   def predict(self,reportingLevel=0):
+    """predict data (produce smoothed data)
+
+    Predict the data from current parameters, if necessary both the
+    fit and solve steps will be run.
+
+    Parameters
+    ----------
+    reportingLevel : int, optional
+        If >=1 then report time taken for the fitting loop, if >=2
+        then will also report time for each inner loop (each interval)
+
+    Returns
+    -------
+    pred : ndarray
+        Predicted smoothed data, same shape as `data`
+
+    """
     if self.P is None:
       self.solve(reportingLevel=reportingLevel)
     P=self.P
@@ -392,16 +438,12 @@ class SplineSmooth3D:
     t_start=time.time()
     t_last=t_start
     # Same process as earlier, but without AtA calculation.
-    indsXpattern = self.indsXpattern
-    indsYpattern = self.indsYpattern
-    indsZpattern = self.indsZpattern
 
     for cIndZ,cIndY,cIndX, \
     coefsZ,coefsY,coefsX, \
     rangeZ,rangeY,rangeX, \
     tgtinds in self.coefIntervalIter(reportingLevel):
       localP = P[tgtinds]
-
       # Again, finding the local tensor, then vectorising,
       # without the overall einsum:
       # localAtens = np.einsum("zi,yj,xk->zyxijk",
@@ -409,7 +451,6 @@ class SplineSmooth3D:
       # localA = localAtens.reshape((-1,q13))
       # localAp = np.matmul(localA,localP)
       # localAp = localAp.reshape((nindZ,nindY,nindX))
-
       localAp = np.einsum(
         "zi,yj,xk,ijk->zyx".encode("ascii","ignore"),
         coefsZ,coefsY,coefsX,
@@ -428,6 +469,23 @@ class SplineSmooth3D:
     
 
   def buildFullJ(self,reportingLevel=0):
+    """Build the full bending energy matrix.
+
+    Expands the single interval bending energy matrix to cover the
+    full supported domain.
+
+    Parameters
+    ----------
+    reportingLevel : int, optional
+        If >=1 then report time taken for the overall loop, if >=2
+        then will also report time for each inner loop (each interval)
+
+    Returns
+    -------
+    J : ndarray
+        Bending energy matrix.
+
+    """
     if self.Jsub is None:
       self.Jsub = self.buildJ()
     datashape = self.shape
@@ -463,7 +521,12 @@ class SplineSmooth3D:
 
 
   def setupKCP(self):
-    # setup knots and control points
+    """setup knots and control points
+
+    Sets up the control points for the domain and the support coefficients
+    for knots along each direction which are used to form the full support
+    tensor later.
+    """
     q = self.q
     q1 = q+1
     shape = self.shape
@@ -501,9 +564,29 @@ class SplineSmooth3D:
 
 
   def buildGammaMat(self, order, spacing=None, q=None):
-    # dist knot spacing, order is derivative order, q is spline
-    # degree, however only q=3 supported.
-    # Implementing Shackleford et al. LNCS 7511 MICCAI 2012
+    """Evaluate a component of the bending energy integral.
+
+    Part of Shackleford et al. LNCS 7511 MICCAI 2012, integral of
+    requested order derivative squared, corresponds to one of the
+    \hat{\Gamma} of Eq. 17. Used to create one component of bending
+    energy tensor through Hadamard product.
+
+    Parameters
+    ----------
+    order : int
+        Order "o" of derivative in
+        \int (\partial^o f / \partial e_i^o)^2 de_i
+    spacing : float, optional
+        Spacing of knots. If not supplied then originally set spacing.
+    q : int, optional
+        Spline degree, only q=3 (cubic) currently supported.
+        
+
+    Returns
+    -------
+    gamma : ndarray
+        Component of bending energy tensor.
+    """
     if spacing is None:
       spacing = self.spacing
     if q is None:
@@ -543,10 +626,32 @@ class SplineSmooth3D:
 
 
   def buildBigGammaMat(self, orders, spacing=None, q=None):
-    # dist uniform knot spacing (assumed isotropic so far),
-    # orders (dz, dy, dx) are derivative orders 0 to 2,
-    # q=3 is spline degree (only 3 supported)
-    # Implementing Shackleford et al. LNCS 7511 MICCAI 2012
+    """Evaluate a term of the bending energy integral.
+
+    Part of Shackleford et al. LNCS 7511 MICCAI 2012, Hadamard product
+    of three integrals of given order, compute one of the full size
+    tensor terms of the bending energy, corresponds to
+    V^{\delta_x,\delta_y,\delta_z} of Eq. 18.
+
+    Parameters
+    ----------
+    orders : list
+        List of orders of derivatives, one for each of the 3 dimensions.
+        For bending energy \delta_x+\delta_y+\delta_z=2, though this
+        function will happily calculate other order combinations.
+    spacing : float, optional
+        Spacing of knots. If not supplied then originally set spacing.
+    q : int, optional
+        Spline degree, only q=3 (cubic) currently supported. If not
+        supplied then originally set q.
+        
+
+    Returns
+    -------
+    bigGamma : ndarray
+        Single term of bending energy tensor
+
+    """
     if q is None:
       q=self.q
     if spacing is None:
@@ -562,18 +667,52 @@ class SplineSmooth3D:
 
 
   def buildJ(self,spacing=None,q=None):
+    """Evaluate a the full integral for the bending energy tensor on a
+    supported interval.
+
+    Implements Shackleford et al. Analytic Regularization of Uniform
+    Cubic B-spline Deformation Fields LNCS 7511 MICCAI 2012 to
+    calculate the matrix representing the bending energy integral as
+    an inner product on control points.
+
+    Parameters
+    ----------
+    spacing : float, optional
+        Spacing of knots. If not supplied then originally set spacing.
+    q : int, optional
+        Spline degree, only q=3 (cubic) currently supported. If not
+        supplied then originally set q.
+        
+
+    Returns
+    -------
+    J : ndarray
+        Tensor representing the bending energy integral for a supported
+        volume as an inner product on the supporting coefficients.
+
+    Notes
+    ----------
+    There is a discrepancy in Eq. 19 of Shackleford, the factor of 2
+    on cross-derivatives used in bending energy is missing. This
+    function includes it. (While arguably all cost functions are
+    arbitrary, these correspond to cross terms of the frequency space,
+    so are required for directional independence.)
+
+    An alternative would be Wood 2016
+    https://arxiv.org/abs/1605.02446v1 which sets up a similar thing
+    using evaluation at a number of points of the splines to exactly
+    fit the polynomial. This more easily adapts to q!=3, however it
+    needs a bit of further work to allow the mixed d2/dxdy that
+    Shackleford has and which we need for N3's thin-plate cost
+    function, so sticking with this one. Or Shackleford's work could
+    be extending to other q by generalising the B, D matrices in
+    buildGammaMat to higher degree B-splines (as well as extending the
+    integral terms vectors). https://www.plastimatch.org/ has already
+    added a number of other energy terms using the same approach
+    (though not necessarily for higher order splines).
+    """
     # dist assumed isotropic so far, though relatively simple
     # to generalise if needed (mainly need to do type checking)
-    # only spline degree q=3 supported
-    # Implementing Shackleford et al. LNCS 7511 MICCAI 2012
-    # Analytic Regularization of Uniform Cubic B-spline
-    # Deformation Fields
-    # An alternative would be Wood 2016 https://arxiv.org/abs/1605.02446v1
-    # which sets up a similar thing using evaluation at a number of
-    # points of the splines to exactly fit the polynomial. This
-    # more easily adapts to q!=3, however it needs a bit of furter work to
-    # allow the mixed d2/dxdy that Shackleford has and which we need
-    # for N3's thin-plate cost function, so sticking with this one.
     if q is None:
       q=self.q
     if spacing is None:
@@ -602,11 +741,26 @@ class SplineSmooth3D:
 
   @staticmethod
   def invertCoefList (coefList):
-    # return: list indexed by first supporting coef number
-    # each element contains: first voxel index,
-    #                        list of (q) coeffs for that vox
-    # not necessarily a matrix due to possibility of unequal
-    # number of voxels with intervals (particularly at ends)?
+    """Convert a list of per-step cofficients into a by-interval list of
+    coefficients for included steps.
+
+    Parameters
+    ----------
+    coefList : list
+        contains in order for each voxel location along the axis tuples of
+        (index of first supporting knot, [q+1 control point coefficients])
+
+    Returns
+    -------
+    Alocs : list
+
+        List by indexed by supported interval (or first supporting
+        coefficient) along axis, each element tuple: (first Voxel
+        index, local support matrix A), where the local support matrix
+        is nsteps * (q+1), the matrix of influences on each voxel step
+        along the axis of each control point supporting this interval.
+
+    """
     cIndList = [x[0] for x in coefList]
     q1 = coefList[0][1].shape[0]
     coefValList = np.array([x[1] for x in coefList]).reshape((-1,q1))
