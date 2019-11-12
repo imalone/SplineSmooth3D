@@ -101,13 +101,6 @@ class SplineSmooth3D:
   predict(reportingLevel=0)
       Predict smoothed data from current parameters. Will run all prior
       steps if not already performed.
-  #coefIntervalIter(reportingLevel=0)
-  #buildFullJ(reportingLevel=0):
-  #setupKCP(self):
-  #buildGammaMat(self, order, spacing=None, q=None):
-  #buildBigGammaMat(self, orders, spacing=None, q=None):
-  #buildJ(self,spacing=None,q=None):
-  #invertCoefList (coefList):
   """
 
   def __init__(self,data,voxsizes,spacing,mask=None,
