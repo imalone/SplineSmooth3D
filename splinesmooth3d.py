@@ -267,6 +267,14 @@ class SplineSmooth3D:
     q1=self.q+1
     q13 = q1**3
 
+    # The .encode() are a bit annoying, certain versions of
+    # numpy have difficulty with future unicode_literals,
+    # https://github.com/numpy/numpy/issues/10369 others don't
+    # like the encode("ascii").
+    # optimal path, numpy 1.12 is slower for our case with just
+    # True setting, numpy 1.16 is okay with both (and significantly
+    # faster too)
+    optimize="optimal".encode("ascii","ignore")
     AtAOptPath=None
     AtxOptPath=None
 
@@ -289,8 +297,6 @@ class SplineSmooth3D:
       #localAtA = np.matmul(localA.transpose(),localA)
       # .encode("ascii","ignore") is necessary to avoid a
       # TypeError due to  from __future__ import (unicode_literals)
-
-      optimize="optimal".encode("ascii","ignore") # No, really
 
       AtxSum = "xc,yb,za,zyx,zyx->abc".encode("ascii","ignore")
       if AtxOptPath is None:
