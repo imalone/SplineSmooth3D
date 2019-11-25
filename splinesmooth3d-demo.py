@@ -63,11 +63,11 @@ for spacing in [75]:
     print("Fitting")
     splsm3d.fit(reportingLevel=2)
     #for L in [0.001, 0.005, 0.01, 0.05, 0.1, 0.5]:
-    for L in [0.010]:
+    for L in [1e-7]:
         print("Solving")
-        splsm3d.solve(reportingLevel=1,Lambda=L)
+        splsm3d.solve(reportingLevel=1,Lambda=L,voxelsLambda=True)
         print("Predicting S:{} L:{}".format(spacing,L))
         pred = splsm3d.predict(reportingLevel=1)
 
         imgresnii = nib.Nifti1Image(pred, inimg.affine, inimg.header)
-        nib.save(imgresnii,"test-7-dm{}-S{}-L{:.05f}.nii.gz".format(dm,spacing,L))
+        nib.save(imgresnii,"test-8-dm{}-S{}-L{:.03g}.nii.gz".format(dm,spacing,L))

@@ -334,7 +334,8 @@ class SplineSmooth3D:
 
 
     
-  def solve(self,Lambda=None, mincLambda=True, reportingLevel=0):
+  def solve(self,Lambda=None, mincLambda=True, voxelsLambda=False,
+            reportingLevel=0):
     """determine paramters for current data fit
 
     solve will update the currently fitted parameters, if necessary
@@ -360,6 +361,20 @@ class SplineSmooth3D:
         each dimension (6^6=46656 overall). By default we produce
         the same smoothing for a given Lambda that MINC will,
         internally the Lambda used is Lambda_{MINC}*spacing/(6^6).
+    voxelsLambda : bool, optional
+        Default False. Whether to multiply the bending energy by the
+        number of voxels in the volume (or mask). In N3 v1.10 this
+        did not happen; a fixed lambda=1.0 was used, although
+        adjusted for subsampling (divided by subsampling factor
+        cubed), in v1.12 the bending energy is multiplied by number
+        of voxels used and separate subsampling adjustment is not
+        needed. Appropriate lambda are therefore much lower; the
+        default lambda for N3 v1.12 is 10^-7, roughly the reciprocal
+        of the number of voxels in an ADNI-3 image and resulting in
+        the same overall penalty. However masked smooths will differ,
+        as the mask volume was not previously explicitly adjusted for.
+        (But domain would have been reduced to the bounding box
+        for the mask, offsetting this effect somewhat.)
     reportingLevel : int, optional
         If >=1 then report time taken for the fitting loop, if >=2
         then will also report time for each inner loop (each interval)
@@ -401,6 +416,8 @@ class SplineSmooth3D:
         # Confirmed: tested this against MINC on a range of
         # image FOV, spacings, lambda, and resolutions.
         lambdaFac *= self.spacing / (6**3)**2
+      if voxelsLambda:
+        lambdaFac *= np.sum(self.mask > 0)
       L = np.linalg.cholesky(AtA + J * lambdaFac)
     p1=np.linalg.solve(L, Atx)
     self.P=np.linalg.solve(L.T.conj(),p1)
