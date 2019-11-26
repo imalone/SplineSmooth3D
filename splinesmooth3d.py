@@ -846,7 +846,10 @@ class SplineSmooth3D:
       Lambda = None, # No point calculating yet
       dofit = False
     )
-
+    newSpline.spacing = self.spacing / 2.0
+    newSpline.mincLambda = self.mincLambda
+    newSpline.Lambda= self.Lambda
+    newSpline.voxelsLambda = self.voxelsLambda
     newKntsArr = [ self.doubleKnots(knts,self.q)
                           for knts in self.kntsArr ]
     newSpline.setupKCP(newKntsArr)
