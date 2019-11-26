@@ -9,6 +9,7 @@ import sys
 import argparse
 
 import nibabel as nib
+import numpy as np
 from splinesmooth3d import SplineSmooth3D
 
 infile="adni3-1006.nii.gz"
@@ -67,6 +68,7 @@ for spacing in [75]:
         print("Solving")
         splsm3d.solve(reportingLevel=1,Lambda=L,voxelsLambda=True)
         splsm3dsub = splsm3d.promote()
+        splsm3dsub2 = splsm3dsub.promote()
         print("Predicting S:{} L:{}".format(spacing,L))
         pred = splsm3d.predict(reportingLevel=1)
 
@@ -81,3 +83,12 @@ for spacing in [75]:
         imgresnii = nib.Nifti1Image(preddiff, inimg.affine)
         nib.save(imgresnii,"test-1-subdiff-dm{}-S{}-L{:.03g}.nii.gz".format(dm,spacing,L))
         print("Subdivision max difference: {}".format(np.max(np.abs(preddiff))))
+        print("Predicting sub S:{} L:{}".format(spacing,L))
+        predsub2 = splsm3dsub2.predict(reportingLevel=1)
+
+        imgresnii = nib.Nifti1Image(predsub2, inimg.affine)
+        nib.save(imgresnii,"test-1-sub3-dm{}-S{}-L{:.03g}.nii.gz".format(dm,spacing,L))
+        preddiff2 = predsub2 - pred
+        imgresnii = nib.Nifti1Image(preddiff2, inimg.affine)
+        nib.save(imgresnii,"test-1-subdiff2-dm{}-S{}-L{:.03g}.nii.gz".format(dm,spacing,L))
+        print("Subdivision2 max difference: {}".format(np.max(np.abs(preddiff2))))
