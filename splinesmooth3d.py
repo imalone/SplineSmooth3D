@@ -188,13 +188,22 @@ class SplineSmooth3D:
     t_start=time.time()
     t_last=t_start
     for cIndZ in range(len(invCoefArr[0])):
-      firstZ, coefsZ = invCoefArr[0][cIndZ]
+      coefList = invCoefArr[0][cIndZ]
+      if coefList is None:
+        continue
+      firstZ, coefsZ = coefList
       nindZ=coefsZ.shape[0]
       for cIndY in range(len(invCoefArr[1])):
-        firstY, coefsY = invCoefArr[1][cIndY]
+        coefList = invCoefArr[1][cIndY]
+        if coefList is None:
+          continue
+        firstY, coefsY = coefList
         nindY=coefsY.shape[0]
         for cIndX in range(len(invCoefArr[2])):
-          firstX, coefsX = invCoefArr[2][cIndX]
+          coefList = invCoefArr[2][cIndX]
+          if coefList is None:
+            continue
+          firstX, coefsX = coefList
           nindX=coefsX.shape[0]
 
           indsX = indsXpattern + cIndX
@@ -802,10 +811,9 @@ class SplineSmooth3D:
     coefValList = np.array([x[1] for x in coefList]).reshape((-1,q1))
     firstC, voxinds, coefinds = np.unique(cIndList,
                                 return_index=True, return_inverse=True)
-    Alocs =[
-      [firstvox, coefValList[coefinds==C,:]]
-      for (C, firstvox) in zip (firstC, voxinds)
-    ]
+    Alocs = [None] * (firstC.max()+1)
+    for ind, (C,firstvox) in enumerate(zip(firstC, voxinds)):
+      Alocs[C] = [firstvox, coefValList[coefinds==ind,:]]
     return Alocs
 
 
