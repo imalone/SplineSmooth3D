@@ -6,6 +6,7 @@ import time
 
 import numpy.linalg as linalg
 import numpy as np
+import scipy.ndimage as ndimage
 
 from test_scipyspline import knots_over_domain, eval_nonzero_bspl
 
@@ -106,7 +107,8 @@ class SplineSmooth3D:
   def __init__(self,data,voxsizes,spacing,mask=None,
                q=3,
                domainMethod="centre",
-               Lambda=None, dofit=True):
+               Lambda=None, mincLambda=True, voxelsLambda=False,
+               dofit=True):
     self.data = data
     self.shape = data.shape
     self.voxsizes = voxsizes
@@ -120,6 +122,9 @@ class SplineSmooth3D:
     self.P=None
     self.Jsub=None
     self.J=None
+    self.mincLambda = mincLambda
+    self.voxelsLambda= voxelsLambda
+
     if ( np.min(self.shape) < 2 or len(self.shape) !=3 or
          voxsizes.size != 3 ):
       # Not too difficult to extend to 1D/2D, would
@@ -444,7 +449,9 @@ class SplineSmooth3D:
 
     """
     if self.P is None:
-      self.solve(reportingLevel=reportingLevel)
+      self.solve(reportingLevel=reportingLevel,
+                 Lambda=self.Lambda, mincLambda=self.mincLambda,
+                 voxelsLambda=self.voxelsLambda)
     P=self.P
     q=self.q
     q1=q+1
@@ -536,18 +543,12 @@ class SplineSmooth3D:
     return J
 
 
-  def setupKCP(self):
-    """setup knots and control points
-
-    Sets up the control points for the domain and the support coefficients
-    for knots along each direction which are used to form the full support
-    tensor later.
-    """
-    q = self.q
-    q1 = q+1
+  def setupKnots(self):
+    """construct the knots for each dimension"""
     shape = self.shape
     voxsizes = self.voxsizes
     spacing = self.spacing
+    q = self.q
     domain = [[0,(nvox-1)*voxsize]
                    for (nvox, voxsize) in zip(shape, voxsizes)]
 
@@ -555,6 +556,25 @@ class SplineSmooth3D:
                                  q=q, method=self.domainMethod)
                for bound in domain]
     self.kntsArr = kntsArr
+
+
+  def setupKCP(self, knts=None):
+    """setup knots and control points
+
+    Sets up the control points for the domain and the support coefficients
+    for knots along each direction which are used to form the full support
+    tensor later.
+    """
+    if knts is None:
+      self.setupKnots()
+    else:
+      self.kntsArr = knts
+    shape = self.shape
+    voxsizes = self.voxsizes
+    kntsArr = self.kntsArr
+    q = self.q
+    q1 = q+1
+
     totalPar = 1
     for knts in self.kntsArr:
       totalPar *= knts[0]
@@ -789,3 +809,93 @@ class SplineSmooth3D:
     return Alocs
 
 
+  @staticmethod
+  def doubleKnots(kntsTuple, q):
+    """Subdivide knot locations and provide updated coefficient number"""
+    nCoef=kntsTuple[0]
+    oldKnts = kntsTuple[1]
+    halfKnts = (oldKnts[1:] + oldKnts[:-1]) /2
+    newKnts = np.empty((2*oldKnts.size-1))
+    newKnts[0::2] = oldKnts
+    newKnts[1::2] = halfKnts
+    newKnts = newKnts[q:-q]
+    nCoef = 2 * nCoef - q
+    return (nCoef, newKnts)
+
+
+  def promote(self, reportingLevel=0):
+    """Generate a new spline model with knot spacing halved
+
+    Generates a new SplineSmooth3D instance, with intermediate knots
+    inserted and coefficients rescaled to produce an equivalent model.
+    Current model is fitted first if necessary (if you didn't want this
+    then just create the finer mesh spline directly).
+
+    Returns
+    -------
+    SplineSmooth3D
+
+    """
+    newSpline = SplineSmooth3D(
+      data = self.data,
+      voxsizes = self.voxsizes,
+      spacing = self.spacing, # Not yet...
+      mask = self.mask,
+      q = self.q,
+      domainMethod = self.domainMethod,
+      Lambda = None, # No point calculating yet
+      dofit = False
+    )
+
+    newKntsArr = [ self.doubleKnots(knts,self.q)
+                          for knts in self.kntsArr ]
+    newSpline.setupKCP(newKntsArr)
+
+    # I think this even-odd convolution trick works
+    # for all spline orders on uniform knots, due to
+    # the symmetry of odd and even polynomial terms,
+    # however extending it requires calculating the
+    # contribution coefficients for the higher spline
+    # orders which I cannot find set out analytically
+    # anywhere, would prefer not to calculate recursively
+    # and am not currently motivated to derive.
+
+    if self.P is None:
+      self.solve(reportingLevel=reportingLevel,
+                 Lambda=self.Lambda, mincLambda=self.mincLambda,
+                 voxelsLambda=self.voxelsLambda)
+
+    Pshape = np.array([ kntsTuple[0] for kntsTuple in self.kntsArr])
+    Pview = self.P.reshape(Pshape)
+    Pexpand = np.zeros(2*Pshape+1)
+    Pexpand[1::2,1::2,1::2] = Pview
+    # q+2=5 is correct for q=3, think it's also correct for
+    # q!=3 cases, corresponds to polynomials +1 for overlap
+    # to next basis.
+    coefConv = np.full(self.q+2,np.NaN)
+    coefConv[0::2] = np.array([1.0,6.0,1.0])/8
+    coefConv[1::2] = np.array([1.0,1.0])/2
+    coefConv3D = np.einsum("i,j,k->ijk",
+                           coefConv,coefConv,coefConv)
+    dropEnds = (self.q+1)//2
+    # Attention! scipy convolve doesn't truly convolve as
+    # the convolving function isn't reversed. However, we're
+    # using a symmetric function anyway.
+    # Unlike numpy (1D) convolve function it doesn't offer
+    # output range control either, so we have to trim ends
+    # ourselves (full, same, valid - last is the one we want).
+    # Old versions of scipy (e.g. 0.14) defined (or at least
+    # documented) origin differently, so be sure to look at
+    # correct documentation, in 1.3.3 the middle element of
+    # the filter is positioned on each input element with
+    # origin=0. We use a NaN filled padding to make any
+    # errors obvious.
+    Pexpand = ndimage.convolve(Pexpand,coefConv3D,
+                               mode="constant",cval=np.NaN)
+    Pexpand = Pexpand[dropEnds:-dropEnds,
+                      dropEnds:-dropEnds,
+                      dropEnds:-dropEnds]
+    newSpline.P = Pexpand.reshape(-1)
+    if self.Lambda is not None:
+      newSpline.buildJ()
+    return newSpline
