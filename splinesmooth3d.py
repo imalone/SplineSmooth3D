@@ -940,7 +940,7 @@ class SplineSmooth3D(object):
 
 
 
-class SplineSmooth3DUnregularised(SplineSmooth3D):
+class SplineSmooth3DUnregularized(SplineSmooth3D):
   """3D smoothing tensor B-spline class for fields defined as numpy
   arrays, fitting using Lee 1997 https://doi.org/10.1109/2945.620490
   scheme for multi-level splines
@@ -957,7 +957,7 @@ class SplineSmooth3DUnregularised(SplineSmooth3D):
                Lambda=None, mincLambda=True, voxelsLambda=False,
                costDerivative=2,
                dofit=True):
-    super(SplineSmooth3DUnregularised,self).__init__(
+    super(SplineSmooth3DUnregularized,self).__init__(
       data,voxsizes,spacing,mask=mask,
       q=q,
       domainMethod=domainMethod,

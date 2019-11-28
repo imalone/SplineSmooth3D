@@ -9,7 +9,7 @@ import sys
 import argparse
 
 import nibabel as nib
-from splinesmooth3d import SplineSmooth3D, SplineSmooth3DUnregularised
+from splinesmooth3d import SplineSmooth3DUnregularized
 
 infile="adni3-1006.nii.gz"
 outfile="test-splinesmooth3d.nii.gz"
@@ -55,7 +55,7 @@ q = 3
 
 for spacing in [75]:
     dm="minc"
-    splsm3d = SplineSmooth3DUnregularised(inimgdata, voxsizes, spacing,
+    splsm3d = SplineSmooth3DUnregularized(inimgdata, voxsizes, spacing,
                              dofit=False,
                              domainMethod=dm, mask=mask)
     print("Fitting")
