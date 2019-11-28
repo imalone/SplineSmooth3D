@@ -1093,11 +1093,13 @@ class SplineSmooth3DUnregularized(SplineSmooth3D):
     return AtA, Atx
 
 
-  def solve(self, reportingLevel=0):
+  def solve(self, reportingLevel=0,
+            Lambda=None, mincLambda=None, voxelsLambda=None):
     """determine paramters for current data fit
 
     solve will update the currently fitted parameters, if necessary
-    running `fit()` first.
+    running `fit()` first. Lambda only accepted for compatibility with
+    SplineSmooth3D.solve(), unused.
 
     Parameters
     ----------
