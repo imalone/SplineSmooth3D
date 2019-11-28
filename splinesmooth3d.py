@@ -11,7 +11,7 @@ import scipy.ndimage as ndimage
 from test_scipyspline import knots_over_domain, eval_nonzero_bspl
 
 
-class SplineSmooth3D:
+class SplineSmooth3D(object):
   """3D smoothing tensor B-spline class for fields defined as numpy
   arrays, with thin-plate spline bending regularisation.
 
@@ -115,6 +115,7 @@ class SplineSmooth3D:
                Lambda=None, mincLambda=True, voxelsLambda=False,
                costDerivative=2,
                dofit=True):
+    #super(SplineSmooth3D,self).__init__()
     self.data = data
     self.shape = data.shape
     self.voxsizes = voxsizes
@@ -950,6 +951,24 @@ class SplineSmooth3DUnregularised(SplineSmooth3D):
 
   """
   
+  def __init__(self,data,voxsizes,spacing,mask=None,
+               q=3,
+               domainMethod="centre",
+               Lambda=None, mincLambda=True, voxelsLambda=False,
+               costDerivative=2,
+               dofit=True):
+    super(SplineSmooth3DUnregularised,self).__init__(
+      data,voxsizes,spacing,mask=mask,
+      q=q,
+      domainMethod=domainMethod,
+      Lambda=None, mincLambda=True, voxelsLambda=False, dofit=False)
+    self.omegaWeights=None
+    if(dofit):
+      self.fit()
+    return None
+    
+    
+
   def fit(self,data=None, reportingLevel=0):
     """fit current data, or update current data and fit
 
@@ -988,9 +1007,11 @@ class SplineSmooth3DUnregularised(SplineSmooth3D):
     self.data=data
     self.P=None # Invalidate P
     totalPar = self.totalPar
-    needAtA = self.AtA is None
-    if needAtA:
+    needWeights = self.AtA is None or self.omegaWeights is None
+    if needWeights:
       self.AtA = np.zeros((totalPar))
+      self.omegaWeights = np.zeros(data.shape)
+    omegaWeights = self.omegaWeights
     self.Atx = np.zeros(totalPar)
     AtA = self.AtA
     AtAflat = AtA
@@ -1012,47 +1033,58 @@ class SplineSmooth3DUnregularised(SplineSmooth3D):
     # True setting, numpy 1.16 is okay with both (and significantly
     # faster too)
     optimize="optimal".encode("ascii","ignore")
-    wLocOptPath=None
+    phiSumOptPath=None
+
+    if needWeights:
+      for cIndZ,cIndY,cIndX, \
+        coefsZ,coefsY,coefsX, \
+        rangeZ,rangeY,rangeX, \
+        tgtinds in self.coefIntervalIter(reportingLevel):
+        localMask = mask[rangeZ[0]:rangeZ[1],
+                         rangeY[0]:rangeY[1],
+                         rangeX[0]:rangeX[1]]
+        coefsZ2 = np.square(coefsZ)
+        coefsY2 = np.square(coefsY)
+        coefsX2 = np.square(coefsX)
+        voxWeightSum = "xc,yb,za,zyx->zyx".encode("ascii","ignore")
+        voxWeights = np.einsum(voxWeightSum,
+                               coefsX2,coefsY2,coefsZ2,
+                               localMask, optimize=optimize)
+        nonzero = voxWeights!=0
+        voxWeights[nonzero] = 1/voxWeights[nonzero]
+        omegaWeights[rangeZ[0]:rangeZ[1],
+                     rangeY[0]:rangeY[1],
+                     rangeX[0]:rangeX[1]] = voxWeights
+        cpWeightSum = "xc,yb,za,zyx->abc".encode("ascii","ignore")
+        cpWeights = np.einsum(cpWeightSum,
+                               coefsX2,coefsY2,coefsZ2,
+                               localMask, optimize=optimize)
+        AtAflat[tgtinds] += cpWeights.reshape(-1)
 
     for cIndZ,cIndY,cIndX, \
     coefsZ,coefsY,coefsX, \
     rangeZ,rangeY,rangeX, \
     tgtinds in self.coefIntervalIter(reportingLevel):
+      coefsZ3 = np.power(coefsZ,3)
+      coefsY3 = np.power(coefsY,3)
+      coefsX3 = np.power(coefsX,3)
       localData = data[rangeZ[0]:rangeZ[1],
                        rangeY[0]:rangeY[1],
                        rangeX[0]:rangeX[1]]
-      localMask = mask[rangeZ[0]:rangeZ[1],
-                       rangeY[0]:rangeY[1],
-                       rangeX[0]:rangeX[1]]
-      # This is what we're actually doing, below, and may help
-      # explain what might seem an odd order of indices
-      #localAtens = np.einsum("zi,yj,xk->zyxijk",
-      #                       coefsZ,coefsY,coefsX)
-      #localA = localAtens.reshape((-1,q13))
-      #localAtx = np.matmul(localA.transpose(),localData.reshape(-1))
-      #localAtA = np.matmul(localA.transpose(),localA)
-      # .encode("ascii","ignore") is necessary to avoid a
-      # TypeError due to  from __future__ import (unicode_literals)
+      voxWeights = omegaWeights[rangeZ[0]:rangeZ[1],
+                                rangeY[0]:rangeY[1],
+                                rangeX[0]:rangeX[1]]
+      phiSum = "xc,yb,za,zyx,zyx->abc".encode("ascii","ignore")
+      if phiSumOptPath is None:
+        phiSumOptPath = np.einsum_path(phiSum,
+          coefsX3,coefsY3,coefsZ3,
+          voxWeights, localData, optimize=optimize)[0]
+      phi = np.einsum(
+        phiSum,
+        coefsX3,coefsY3,coefsZ3,
+        voxWeights, localData, optimize=phiSumOptPath)
 
-      wLocSum = "xc,yb,za,zyx->abczyx".encode("ascii","ignore")
-      if wLocOptPath is None:
-        wLocOptPath = np.einsum_path(wLocSum,
-          coefsX,coefsY,coefsZ,
-          localMask, optimize=optimize)[0]
-      wLoc = np.einsum(
-        wLocSum,
-        coefsX,coefsY,coefsZ,
-        localMask, optimize=wLocOptPath).reshape((q13,-1))
-
-      # wLoc is matrix, phi indicies by vox indicies
-      wLoc2 = np.square(wLoc)
-      wLoc2cpsum = wLoc2.sum(0) # Each vox, summed over cp
-      phi = wLoc * localData.reshape(-1) / wLoc2cpsum * wLoc2
-      phi[wLoc==0]=0
-
-      Atx[tgtinds] += phi.sum(1)
-      if needAtA:
-        AtAflat[tgtinds] += wLoc2.sum(1)
+      Atx[tgtinds] += phi.reshape(-1)
 
     if reportingLevel >= 1:
       t_now = time.time()
