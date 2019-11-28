@@ -78,6 +78,10 @@ class SplineSmooth3D:
   mincLambda : bool
       # Not implemented yet, see solve. Whether to use an adjstment
       that makes lambda values compatible with MINC spline_smooth
+  costDerivative : int
+      Derivative order for cost function associated with Lambda,
+      default 2 is thin plate bending energy. 0 penalises square of
+      coefficients. Must be between 0 and q-1
   P : ndarray
       Fitted parameters as vector
   Atx : ndarray
@@ -102,12 +106,14 @@ class SplineSmooth3D:
   predict(reportingLevel=0)
       Predict smoothed data from current parameters. Will run all prior
       steps if not already performed.
+
   """
 
   def __init__(self,data,voxsizes,spacing,mask=None,
                q=3,
                domainMethod="centre",
                Lambda=None, mincLambda=True, voxelsLambda=False,
+               costDerivative=2,
                dofit=True):
     self.data = data
     self.shape = data.shape
@@ -119,6 +125,7 @@ class SplineSmooth3D:
     self.Lambda=Lambda
     self.mincLambda = mincLambda
     self.voxelsLambda= voxelsLambda
+    self.costDerivative= costDerivative
 
     self.AtA=None
     self.Atx=None
@@ -405,6 +412,7 @@ class SplineSmooth3D:
       mincLambda = self.mincLambda
     if voxelsLambda is None:
       voxelsLambda = self.voxelsLambda
+    deriv=self.costDerivative
 
     if Lambda is not None and self.J is None:
       self.J = self.buildFullJ(reportingLevel=reportingLevel)
@@ -434,7 +442,7 @@ class SplineSmooth3D:
         # by 6^6.
         # Confirmed: tested this against MINC on a range of
         # image FOV, spacings, lambda, and resolutions.
-        lambdaFac *= self.spacing / (6**3)**2
+        lambdaFac *= self.spacing**(2*deriv-3) / (6**3)**2
       if voxelsLambda:
         lambdaFac *= np.sum(self.mask > 0)
       AtAJ=AtA + J * lambdaFac
@@ -719,7 +727,7 @@ class SplineSmooth3D:
     return bigGamma.reshape(np.power(gammaZ.shape,3))
 
 
-  def buildJ(self,spacing=None,q=None, deriv=2):
+  def buildJ(self,spacing=None,q=None, deriv=None):
     """Evaluate a the full integral for the bending energy tensor on a
     supported interval.
 
@@ -774,6 +782,8 @@ class SplineSmooth3D:
       q=self.q
     if spacing is None:
       spacing=self.spacing
+    if deriv is None:
+      deriv = self.costDerivative
 
     if (deriv<0 or deriv>(q-1) or deriv%1 != 0):
       raise ValueError("deriv must be integer between 0 and q-1")
