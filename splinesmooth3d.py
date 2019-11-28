@@ -117,13 +117,14 @@ class SplineSmooth3D:
     self.q=q
     self.domainMethod = domainMethod
     self.Lambda=Lambda
+    self.mincLambda = mincLambda
+    self.voxelsLambda= voxelsLambda
+
     self.AtA=None
     self.Atx=None
     self.P=None
     self.Jsub=None
     self.J=None
-    self.mincLambda = mincLambda
-    self.voxelsLambda= voxelsLambda
 
     if ( np.min(self.shape) < 2 or len(self.shape) !=3 or
          voxsizes.size != 3 ):
@@ -348,7 +349,7 @@ class SplineSmooth3D:
 
 
     
-  def solve(self,Lambda=None, mincLambda=True, voxelsLambda=False,
+  def solve(self,Lambda=None, mincLambda=None, voxelsLambda=None,
             reportingLevel=0):
     """determine paramters for current data fit
 
@@ -365,33 +366,32 @@ class SplineSmooth3D:
         None at object creation then no smoothing is used (this may
         fail to solve if insufficient data coverage).
     mincLambda : bool, optional
-        Default True. There are two quirks to the MINC N3 definition
-        of Lambda that cause it to be a very different amount (by
-        a factor of around 500-50000) of smoothing to what might be
-        expected: first bending energy is computed purely on the
-        scaled knot locations, meaning both volume and derivative
-        scaling terms are missing, second the spline basis functions
-        are not normalised, leading to a factor of 6^2 in AtA for
-        each dimension (6^6=46656 overall). By default we produce
-        the same smoothing for a given Lambda that MINC will,
-        internally the Lambda used is Lambda_{MINC}*spacing/(6^6).
+        Defaults to initialised value. There are two quirks to the
+        MINC N3 definition of Lambda that cause it to be a very
+        different amount (by a factor of around 500-50000) of
+        smoothing to what might be expected: first bending energy is
+        computed purely on the scaled knot locations, meaning both
+        volume and derivative scaling terms are missing, second the
+        spline basis functions are not normalised, leading to a factor
+        of 6^2 in AtA for each dimension (6^6=46656 overall). By
+        default we produce the same smoothing for a given Lambda that
+        MINC will, internally the Lambda used is
+        Lambda_{MINC}*spacing/(6^6).
+
     voxelsLambda : bool, optional
-        Default False. Whether to multiply the bending energy by the
-        number of voxels in the volume (or mask). In N3 v1.10 this
-        did not happen; a fixed lambda=1.0 was used, although
-        adjusted for subsampling (divided by subsampling factor
-        cubed), in v1.12 the bending energy is multiplied by number
-        of voxels used and separate subsampling adjustment is not
-        needed. Appropriate lambda are therefore much lower; the
+        Defaults to initialised value. Whether to multiply the bending
+        energy by the number of voxels in the volume (or mask). In N3
+        v1.10 this did not happen; a fixed lambda=1.0 was used,
+        although adjusted for subsampling (divided by subsampling
+        factor cubed), in v1.12 the bending energy is multiplied by
+        number of voxels used and separate subsampling adjustment is
+        not needed. Appropriate lambda are therefore much lower; the
         default lambda for N3 v1.12 is 10^-7, roughly the reciprocal
         of the number of voxels in an ADNI-3 image and resulting in
         the same overall penalty. However masked smooths will differ,
         as the mask volume was not previously explicitly adjusted for.
-        (But domain would have been reduced to the bounding box
-        for the mask, offsetting this effect somewhat.)
-    reportingLevel : int, optional
-        If >=1 then report time taken for the fitting loop, if >=2
-        then will also report time for each inner loop (each interval)
+        (But domain would have been reduced to the bounding box for
+        the mask, offsetting this effect somewhat.)
 
     Returns
     -------
@@ -401,6 +401,11 @@ class SplineSmooth3D:
     """
     if Lambda is None:
       Lambda = self.Lambda
+    if mincLambda is None:
+      mincLambda = self.mincLambda
+    if voxelsLambda is None:
+      voxelsLambda = self.voxelsLambda
+
     if Lambda is not None and self.J is None:
       self.J = self.buildFullJ(reportingLevel=reportingLevel)
     if self.AtA is None:
@@ -410,7 +415,7 @@ class SplineSmooth3D:
     Atx=self.Atx
 
     if Lambda is None:
-      L = np.linalg.cholesky(AtA)
+      AtAJ = AtA
     else:
       lambdaFac = Lambda
       if mincLambda:
@@ -432,9 +437,12 @@ class SplineSmooth3D:
         lambdaFac *= self.spacing / (6**3)**2
       if voxelsLambda:
         lambdaFac *= np.sum(self.mask > 0)
-      L = np.linalg.cholesky(AtA + J * lambdaFac)
+      AtAJ=AtA + J * lambdaFac
+
+    L = np.linalg.cholesky(AtAJ)
     p1=np.linalg.solve(L, Atx)
-    self.P=np.linalg.solve(L.T.conj(),p1)
+    P=np.linalg.solve(L.T.conj(),p1)
+    self.P=P
     return self.P
 
 
@@ -711,7 +719,7 @@ class SplineSmooth3D:
     return bigGamma.reshape(np.power(gammaZ.shape,3))
 
 
-  def buildJ(self,spacing=None,q=None):
+  def buildJ(self,spacing=None,q=None, deriv=2):
     """Evaluate a the full integral for the bending energy tensor on a
     supported interval.
 
@@ -727,6 +735,10 @@ class SplineSmooth3D:
     q : int, optional
         Spline degree, only q=3 (cubic) currently supported. If not
         supplied then originally set q.
+    deriv : int, optional
+        Derivative to use in energy term, range 0,...,q-1. Default=2
+        is the thin plate bending energy, but 1 (to penalise gradient)
+        or 0 (to penalise constants/coefficients) also possible.        
         
 
     Returns
@@ -762,6 +774,9 @@ class SplineSmooth3D:
       q=self.q
     if spacing is None:
       spacing=self.spacing
+
+    if (deriv<0 or deriv>(q-1) or deriv%1 != 0):
+      raise ValueError("deriv must be integer between 0 and q-1")
     
     from scipy.misc import factorial
     J = None
@@ -773,10 +788,10 @@ class SplineSmooth3D:
     for dx in range(0,3):
       for dy in range(0,3):
         for dz in range(0,3):
-          if (dx+dy+dz)==2:
+          if (dx+dy+dz)==deriv:
             orders=(dx,dy,dz)
             # fac: see above
-            fac = factorial(2)/np.prod(factorial([dx,dy,dz]))
+            fac = factorial(deriv)/np.prod(factorial([dx,dy,dz]))
             newJ = self.buildBigGammaMat(orders) * fac
             if J is None:
               J = newJ
@@ -855,9 +870,10 @@ class SplineSmooth3D:
       dofit = False
     )
     newSpline.spacing = self.spacing / 2.0
-    newSpline.mincLambda = self.mincLambda
     newSpline.Lambda= self.Lambda
+    newSpline.mincLambda = self.mincLambda
     newSpline.voxelsLambda = self.voxelsLambda
+
     newKntsArr = [ self.doubleKnots(knts,self.q)
                           for knts in self.kntsArr ]
     newSpline.setupKCP(newKntsArr)
