@@ -859,7 +859,7 @@ class SplineSmooth3D:
     SplineSmooth3D
 
     """
-    newSpline = SplineSmooth3D(
+    newSpline = self.__class__(
       data = self.data,
       voxsizes = self.voxsizes,
       spacing = self.spacing, # Not yet...
@@ -926,3 +926,153 @@ class SplineSmooth3D:
     if self.Lambda is not None:
       newSpline.buildJ()
     return newSpline
+
+
+
+class SplineSmooth3DUnregularised(SplineSmooth3D):
+  """3D smoothing tensor B-spline class for fields defined as numpy
+  arrays, fitting using Lee 1997 https://doi.org/10.1109/2945.620490
+  scheme for multi-level splines
+
+  *Experimental* Same methods as SplineSmooth3D, except that Atx and
+  AtA are used differently, Atx is Lee's delta array, AtA is the omega
+  array.
+
+  """
+  
+  def fit(self,data=None, reportingLevel=0):
+    """fit current data, or update current data and fit
+
+    fit does not solve for parameters, it calculates the projection of
+    data to parameter space `Atx`, and if necessary the normalising
+    array omega (as `AtA`). This means re-using fit for updated data
+    is quicker than using a fresh instance. However omega (`AtA`)
+    depends on the shape of data, the mask and the knot placement, a
+    new instance is required if any of these are to be changed.
+
+    Running fit will invalidate the current parameters solution `P`.
+
+    Parameters
+    ----------
+    data : ndarray : optional
+        New data to fit, if no new data then will fit the previously
+        supplied data.
+    reportingLevel : int, optional
+        If >=1 then report time taken for the fitting loop, if >=2
+        then will also report time for each inner loop (each interval)
+
+    Returns
+    -------
+    AtA : ndarray
+        Parameter weighting array
+    Atx : ndarray
+        Projection of data to parameter space
+
+    """
+    mask = self.mask
+    if (data is None):
+      data = self.data
+    if (not data.shape == self.data.shape):
+      raise ValueError("Shape of data passed to fit must"+
+                       "match that of data used to initialise")
+    self.data=data
+    self.P=None # Invalidate P
+    totalPar = self.totalPar
+    needAtA = self.AtA is None
+    if needAtA:
+      self.AtA = np.zeros((totalPar))
+    self.Atx = np.zeros(totalPar)
+    AtA = self.AtA
+    AtAflat = AtA
+    Atx = self.Atx
+    kntsArr = self.kntsArr
+    invCoefArr = self.invCoefArr
+
+    t_start=time.time()
+    t_last=t_start
+
+    q1=self.q+1
+    q13 = q1**3
+
+    # The .encode() are a bit annoying, certain versions of
+    # numpy have difficulty with future unicode_literals,
+    # https://github.com/numpy/numpy/issues/10369 others don't
+    # like the encode("ascii").
+    # optimal path, numpy 1.12 is slower for our case with just
+    # True setting, numpy 1.16 is okay with both (and significantly
+    # faster too)
+    optimize="optimal".encode("ascii","ignore")
+    wLocOptPath=None
+
+    for cIndZ,cIndY,cIndX, \
+    coefsZ,coefsY,coefsX, \
+    rangeZ,rangeY,rangeX, \
+    tgtinds in self.coefIntervalIter(reportingLevel):
+      localData = data[rangeZ[0]:rangeZ[1],
+                       rangeY[0]:rangeY[1],
+                       rangeX[0]:rangeX[1]]
+      localMask = mask[rangeZ[0]:rangeZ[1],
+                       rangeY[0]:rangeY[1],
+                       rangeX[0]:rangeX[1]]
+      # This is what we're actually doing, below, and may help
+      # explain what might seem an odd order of indices
+      #localAtens = np.einsum("zi,yj,xk->zyxijk",
+      #                       coefsZ,coefsY,coefsX)
+      #localA = localAtens.reshape((-1,q13))
+      #localAtx = np.matmul(localA.transpose(),localData.reshape(-1))
+      #localAtA = np.matmul(localA.transpose(),localA)
+      # .encode("ascii","ignore") is necessary to avoid a
+      # TypeError due to  from __future__ import (unicode_literals)
+
+      wLocSum = "xc,yb,za,zyx->abczyx".encode("ascii","ignore")
+      if wLocOptPath is None:
+        wLocOptPath = np.einsum_path(wLocSum,
+          coefsX,coefsY,coefsZ,
+          localMask, optimize=optimize)[0]
+      wLoc = np.einsum(
+        wLocSum,
+        coefsX,coefsY,coefsZ,
+        localMask, optimize=wLocOptPath).reshape((q13,-1))
+
+      # wLoc is matrix, phi indicies by vox indicies
+      wLoc2 = np.square(wLoc)
+      wLoc2cpsum = wLoc2.sum(0) # Each vox, summed over cp
+      phi = wLoc * localData.reshape(-1) / wLoc2cpsum * wLoc2
+      phi[wLoc==0]=0
+
+      Atx[tgtinds] += phi.sum(1)
+      if needAtA:
+        AtAflat[tgtinds] += wLoc2.sum(1)
+
+    if reportingLevel >= 1:
+      t_now = time.time()
+      print(t_now-t_start)
+
+    return AtA, Atx
+
+
+  def solve(self, reportingLevel=0):
+    """determine paramters for current data fit
+
+    solve will update the currently fitted parameters, if necessary
+    running `fit()` first.
+
+    Parameters
+    ----------
+
+    Returns
+    -------
+    P : ndarray
+        Fitted control point parameters, as vector
+
+    """
+
+    if self.AtA is None:
+      fit(data)
+    AtA = self.AtA
+    Atx = self.Atx
+    P = np.zeros(Atx.shape)
+    nonzero = AtA != 0
+    P[nonzero] = Atx[nonzero] / AtA[nonzero]
+    self.P=P
+    return self.P
