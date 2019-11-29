@@ -418,7 +418,7 @@ class SplineSmooth3D(object):
     if Lambda is not None and self.J is None:
       self.J = self.buildFullJ(reportingLevel=reportingLevel)
     if self.AtA is None:
-      fit(data)
+      self.fit(data)
     J = self.J
     AtA=self.AtA
     Atx=self.Atx
@@ -861,9 +861,11 @@ class SplineSmooth3D(object):
     """Generate a new spline model with knot spacing halved
 
     Generates a new SplineSmooth3D instance, with intermediate knots
-    inserted and coefficients rescaled to produce an equivalent model.
-    Current model is fitted first if necessary (if you didn't want this
-    then just create the finer mesh spline directly).
+    inserted. If coefficients have already been solved then rescaled
+    coefficients are calculated to produce an equivalent model.
+        If current model has not been fitted and solved then the finer
+    mesh only is built. This may be useful if promoting interpolators
+    and fitters in step.
 
     Returns
     -------
@@ -898,42 +900,38 @@ class SplineSmooth3D(object):
     # anywhere, would prefer not to calculate recursively
     # and am not currently motivated to derive.
 
-    if self.P is None:
-      self.solve(reportingLevel=reportingLevel,
-                 Lambda=self.Lambda, mincLambda=self.mincLambda,
-                 voxelsLambda=self.voxelsLambda)
-
-    Pshape = np.array([ kntsTuple[0] for kntsTuple in self.kntsArr])
-    Pview = self.P.reshape(Pshape)
-    Pexpand = np.zeros(2*Pshape+1)
-    Pexpand[1::2,1::2,1::2] = Pview
-    # q+2=5 is correct for q=3, think it's also correct for
-    # q!=3 cases, corresponds to polynomials +1 for overlap
-    # to next basis.
-    coefConv = np.full(self.q+2,np.NaN)
-    coefConv[0::2] = np.array([1.0,6.0,1.0])/8
-    coefConv[1::2] = np.array([1.0,1.0])/2
-    coefConv3D = np.einsum("i,j,k->ijk",
-                           coefConv,coefConv,coefConv)
-    dropEnds = (self.q+1)//2
-    # Attention! scipy convolve doesn't truly convolve as
-    # the convolving function isn't reversed. However, we're
-    # using a symmetric function anyway.
-    # Unlike numpy (1D) convolve function it doesn't offer
-    # output range control either, so we have to trim ends
-    # ourselves (full, same, valid - last is the one we want).
-    # Old versions of scipy (e.g. 0.14) defined (or at least
-    # documented) origin differently, so be sure to look at
-    # correct documentation, in 1.3.3 the middle element of
-    # the filter is positioned on each input element with
-    # origin=0. We use a NaN filled padding to make any
-    # errors obvious.
-    Pexpand = ndimage.convolve(Pexpand,coefConv3D,
-                               mode="constant",cval=np.NaN)
-    Pexpand = Pexpand[dropEnds:-dropEnds,
-                      dropEnds:-dropEnds,
-                      dropEnds:-dropEnds]
-    newSpline.P = Pexpand.reshape(-1)
+    if self.P is not None:
+      Pshape = np.array([ kntsTuple[0] for kntsTuple in self.kntsArr])
+      Pview = self.P.reshape(Pshape)
+      Pexpand = np.zeros(2*Pshape+1)
+      Pexpand[1::2,1::2,1::2] = Pview
+      # q+2=5 is correct for q=3, think it's also correct for
+      # q!=3 cases, corresponds to polynomials +1 for overlap
+      # to next basis.
+      coefConv = np.full(self.q+2,np.NaN)
+      coefConv[0::2] = np.array([1.0,6.0,1.0])/8
+      coefConv[1::2] = np.array([1.0,1.0])/2
+      coefConv3D = np.einsum("i,j,k->ijk",
+                             coefConv,coefConv,coefConv)
+      dropEnds = (self.q+1)//2
+      # Attention! scipy convolve doesn't truly convolve as
+      # the convolving function isn't reversed. However, we're
+      # using a symmetric function anyway.
+      # Unlike numpy (1D) convolve function it doesn't offer
+      # output range control either, so we have to trim ends
+      # ourselves (full, same, valid - last is the one we want).
+      # Old versions of scipy (e.g. 0.14) defined (or at least
+      # documented) origin differently, so be sure to look at
+      # correct documentation, in 1.3.3 the middle element of
+      # the filter is positioned on each input element with
+      # origin=0. We use a NaN filled padding to make any
+      # errors obvious.
+      Pexpand = ndimage.convolve(Pexpand,coefConv3D,
+                                 mode="constant",cval=np.NaN)
+      Pexpand = Pexpand[dropEnds:-dropEnds,
+                        dropEnds:-dropEnds,
+                        dropEnds:-dropEnds]
+      newSpline.P = Pexpand.reshape(-1)
     if self.Lambda is not None:
       newSpline.buildJ()
     return newSpline
