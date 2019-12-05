@@ -8,7 +8,10 @@ import numpy.linalg as linalg
 import numpy as np
 import scipy.ndimage as ndimage
 
-from test_scipyspline import knots_over_domain, eval_nonzero_bspl
+try:
+  from .test_scipyspline import knots_over_domain, eval_nonzero_bspl
+except ValueError:
+  from test_scipyspline import knots_over_domain, eval_nonzero_bspl
 
 
 class SplineSmooth3D(object):
