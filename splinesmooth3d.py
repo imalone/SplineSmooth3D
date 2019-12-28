@@ -126,16 +126,23 @@ class SplineSmooth3D(object):
     self.mask = mask
     self.q=q
     self.domainMethod = domainMethod
-    self.Lambda=Lambda
     self.mincLambda = mincLambda
     self.voxelsLambda= voxelsLambda
-    self.costDerivative= costDerivative
+    self.costDerivative = costDerivative
+
+    if Lambda is None:
+      self.Lambda={}
+    elif isinstance(Lambda, dict):
+      self.Lambda=Lambda
+    else:
+      self.Lambda = {costDerivative:Lambda}
+    Lambda = self.Lambda
 
     self.AtA=None
     self.Atx=None
     self.P=None
-    self.Jsub=None
-    self.J=None
+    self.Jsub=dict()
+    self.J=dict()
 
     if ( np.min(self.shape) < 2 or len(self.shape) !=3 or
          voxsizes.size != 3 ):
@@ -161,8 +168,8 @@ class SplineSmooth3D(object):
       self.mask = mask.astype(self.data.dtype,copy=True)
 
     self.setupKCP()
-    if Lambda is not None:
-      self.Jsub = self.buildJ()
+    for deriv in Lambda:
+      self.Jsub[deriv] = self.buildJ(deriv)
     if(dofit):
       self.fit()
     return None
@@ -416,10 +423,7 @@ class SplineSmooth3D(object):
       mincLambda = self.mincLambda
     if voxelsLambda is None:
       voxelsLambda = self.voxelsLambda
-    deriv=self.costDerivative
 
-    if Lambda is not None and self.J is None:
-      self.J = self.buildFullJ(reportingLevel=reportingLevel)
     if self.AtA is None:
       self.fit(data)
     J = self.J
@@ -427,9 +431,18 @@ class SplineSmooth3D(object):
     Atx=self.Atx
 
     if Lambda is None:
-      AtAJ = AtA
-    else:
-      lambdaFac = Lambda
+      Lambda={}
+    elif not isinstance(Lambda, dict):
+      Lambda = {self.costDerivative:Lambda}
+
+    for deriv in Lambda:
+      if not deriv in self.J:
+        self.J[deriv] = \
+          self.buildFullJ(deriv=deriv,reportingLevel=reportingLevel)
+
+    AtAJ = AtA
+    for deriv in Lambda:
+      lambdaFac = Lambda[deriv]
       if mincLambda:
         # MINC calculates its bending energy integrals without
         # using knot distances, so the (d2f/dx2)^2 volume
@@ -449,7 +462,7 @@ class SplineSmooth3D(object):
         lambdaFac *= self.spacing**(2*deriv-3) / (6**3)**2
       if voxelsLambda:
         lambdaFac *= np.sum(self.mask > 0)
-      AtAJ=AtA + J * lambdaFac
+      AtAJ=AtAJ + J[deriv] * lambdaFac
 
     L = np.linalg.cholesky(AtAJ)
     p1=np.linalg.solve(L, Atx)
@@ -520,7 +533,7 @@ class SplineSmooth3D(object):
 
     
 
-  def buildFullJ(self,reportingLevel=0):
+  def buildFullJ(self,deriv,reportingLevel=0):
     """Build the full bending energy matrix.
 
     Expands the single interval bending energy matrix to cover the
@@ -538,10 +551,10 @@ class SplineSmooth3D(object):
         Bending energy matrix.
 
     """
-    if self.Jsub is None:
-      self.Jsub = self.buildJ()
+    if deriv not in self.Jsub:
+      self.Jsub[deriv] = self.buildJ(deriv)
     datashape = self.shape
-    Jsub=self.Jsub
+    Jsub=self.Jsub[deriv]
     J=np.zeros(self.AtA.shape)
     invCoefArr = self.invCoefArr
     kntsArr=self.kntsArr
@@ -566,9 +579,6 @@ class SplineSmooth3D(object):
     if reportingLevel >= 1:
       t_now = time.time()
       print(t_now-t_start)
-    nIntervals = np.prod(list(map(len,invCoefArr)))
-    nPoints = np.prod(datashape) # fix if using mask
-    J = J #* spacing
     return J
 
 
@@ -731,7 +741,7 @@ class SplineSmooth3D(object):
     return bigGamma.reshape(np.power(gammaZ.shape,3))
 
 
-  def buildJ(self,spacing=None,q=None, deriv=None):
+  def buildJ(self,deriv,spacing=None,q=None):
     """Evaluate a the full integral for the bending energy tensor on a
     supported interval.
 
@@ -935,8 +945,6 @@ class SplineSmooth3D(object):
                         dropEnds:-dropEnds,
                         dropEnds:-dropEnds]
       newSpline.P = Pexpand.reshape(-1)
-    if self.Lambda is not None:
-      newSpline.buildJ()
     return newSpline
 
 
