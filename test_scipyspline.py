@@ -31,8 +31,9 @@ Evaluate the ``k+1`` B-splines which are non-zero on interval ``m``.
 def eval_nonzero_bspl(tfull,x,q=3,nu=0):
   tindstart = np.searchsorted(tfull,x,side="right")-1
   coeffstart = tindstart-q
+  intervals = tfull.size - 2*q - 1
   nonZeroCoeffs = evaluate_all_bspl(tfull,q,x,tindstart,nu=nu)
-  if x == tfull[-(1+q)]:
+  while coeffstart >= intervals:
       # Edge case, last internal knot is technically unsupported
       # since we are supporting from the left edge of the range,
       # but has its last spline coefficient zero, so can trim
@@ -40,6 +41,9 @@ def eval_nonzero_bspl(tfull,x,q=3,nu=0):
       # the start instead.
       coeffstart = coeffstart - 1
       nonZeroCoeffs = np.concatenate(([0],nonZeroCoeffs[0:q]))
+  while coeffstart < 0:
+      coeffstart = coeffstart + 1
+      nonZeroCoeffs = np.concatenate((nonZeroCoeffs[1:],[0]))
   return coeffstart, nonZeroCoeffs
 
 
