@@ -503,6 +503,7 @@ class SplineSmooth3D(object):
     t_start=time.time()
     t_last=t_start
     # Same process as earlier, but without AtA calculation.
+    localApOptPath=None
 
     for cIndZ,cIndY,cIndX, \
     coefsZ,coefsY,coefsX, \
@@ -516,11 +517,17 @@ class SplineSmooth3D(object):
       # localA = localAtens.reshape((-1,q13))
       # localAp = np.matmul(localA,localP)
       # localAp = localAp.reshape((nindZ,nindY,nindX))
-      localAp = np.einsum(
-        "zi,yj,xk,ijk->zyx".encode("ascii","ignore"),
+      localApSum="zi,yj,xk,ijk->zyx".encode("ascii","ignore")
+      if localApOptPath is None:
+        localApOptPath = np.einsum_path(localApSum,
         coefsZ,coefsY,coefsX,
         localP.reshape((q1,q1,q1)),
-        optimize=True )
+        optimize=True)[0]
+      localAp = np.einsum(
+        localApSum,
+        coefsZ,coefsY,coefsX,
+        localP.reshape((q1,q1,q1)),
+        optimize=localApOptPath)
 
       pred[rangeZ[0]:rangeZ[1],
            rangeY[0]:rangeY[1],
@@ -1043,6 +1050,8 @@ class SplineSmooth3DUnregularized(SplineSmooth3D):
     # faster too)
     optimize="optimal".encode("ascii","ignore")
     phiSumOptPath=None
+    voxWeightsOptPath=None
+    cpWeightsOptPath=None
 
     if needWeights:
       for cIndZ,cIndY,cIndX, \
@@ -1056,18 +1065,27 @@ class SplineSmooth3DUnregularized(SplineSmooth3D):
         coefsY2 = np.square(coefsY)
         coefsX2 = np.square(coefsX)
         voxWeightSum = "xc,yb,za,zyx->zyx".encode("ascii","ignore")
+
+        if voxWeightsOptPath is None:
+          voxWeightsOptPath = np.einsum_path(voxWeightSum,
+            coefsX2,coefsY2,coefsZ2,
+            localMask, optimize=optimize )[0]
         voxWeights = np.einsum(voxWeightSum,
                                coefsX2,coefsY2,coefsZ2,
-                               localMask, optimize=optimize)
+                               localMask, optimize=voxWeightsOptPath)
         nonzero = voxWeights!=0
         voxWeights[nonzero] = 1/voxWeights[nonzero]
         omegaWeights[rangeZ[0]:rangeZ[1],
                      rangeY[0]:rangeY[1],
                      rangeX[0]:rangeX[1]] = voxWeights
         cpWeightSum = "xc,yb,za,zyx->abc".encode("ascii","ignore")
+        if cpWeightsOptPath is None:
+          cpWeightsOptPath = np.einsum_path(cpWeightSum,
+            coefsX2,coefsY2,coefsZ2,
+            localMask, optimize=optimize)[0]
         cpWeights = np.einsum(cpWeightSum,
                                coefsX2,coefsY2,coefsZ2,
-                               localMask, optimize=optimize)
+                               localMask, optimize=cpWeightsOptPath)
         AtAflat[tgtinds] += cpWeights.reshape(-1)
 
     for cIndZ,cIndY,cIndX, \
