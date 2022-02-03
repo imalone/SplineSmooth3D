@@ -114,7 +114,7 @@ class SplineSmooth3D(object):
 
   def __init__(self,data,voxsizes,spacing,mask=None,
                q=3,
-               domainMethod="centre",
+               domainMethod="centre", knts=None,
                Lambda=None, mincLambda=True, voxelsLambda=False,
                costDerivative=2,
                dofit=True):
@@ -167,7 +167,7 @@ class SplineSmooth3D(object):
     else:
       self.mask = mask.astype(self.data.dtype,copy=True)
 
-    self.setupKCP()
+    self.setupKCP(knts)
     for deriv in Lambda:
       self.Jsub[deriv] = self.buildJ(deriv)
     if(dofit):
