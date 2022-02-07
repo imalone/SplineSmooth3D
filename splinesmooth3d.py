@@ -1,5 +1,3 @@
-from __future__ import (absolute_import, division,
-                        print_function, unicode_literals)
 from builtins import *
 
 import time
@@ -300,14 +298,10 @@ class SplineSmooth3D(object):
     q1=self.q+1
     q13 = q1**3
 
-    # The .encode() are a bit annoying, certain versions of
-    # numpy have difficulty with future unicode_literals,
-    # https://github.com/numpy/numpy/issues/10369 others don't
-    # like the encode("ascii").
     # optimal path, numpy 1.12 is slower for our case with just
     # True setting, numpy 1.16 is okay with both (and significantly
     # faster too)
-    optimize="optimal".encode("ascii","ignore")
+    optimize="optimal"
     AtAOptPath=None
     AtxOptPath=None
 
@@ -328,10 +322,8 @@ class SplineSmooth3D(object):
       #localA = localAtens.reshape((-1,q13))
       #localAtx = np.matmul(localA.transpose(),localData.reshape(-1))
       #localAtA = np.matmul(localA.transpose(),localA)
-      # .encode("ascii","ignore") is necessary to avoid a
-      # TypeError due to  from __future__ import (unicode_literals)
 
-      AtxSum = "xc,yb,za,zyx,zyx->abc".encode("ascii","ignore")
+      AtxSum = "xc,yb,za,zyx,zyx->abc"
       if AtxOptPath is None:
         AtxOptPath = np.einsum_path(AtxSum,
           coefsX,coefsY,coefsZ,
@@ -343,7 +335,7 @@ class SplineSmooth3D(object):
 
       Atx[tgtinds] += localAtx
       if needAtA:
-        AtASum = "xc,yb,za,zi,yj,xk,zyx->abcijk".encode("ascii","ignore") 
+        AtASum = "xc,yb,za,zi,yj,xk,zyx->abcijk"
         if AtAOptPath is None:
           AtAOptPath = np.einsum_path(
           AtASum,
@@ -517,7 +509,7 @@ class SplineSmooth3D(object):
       # localA = localAtens.reshape((-1,q13))
       # localAp = np.matmul(localA,localP)
       # localAp = localAp.reshape((nindZ,nindY,nindX))
-      localApSum="zi,yj,xk,ijk->zyx".encode("ascii","ignore")
+      localApSum="zi,yj,xk,ijk->zyx"
       if localApOptPath is None:
         localApOptPath = np.einsum_path(localApSum,
         coefsZ,coefsY,coefsX,
@@ -809,7 +801,7 @@ class SplineSmooth3D(object):
     if (deriv<0 or deriv>(q-1) or deriv%1 != 0):
       raise ValueError("deriv must be integer between 0 and q-1")
     
-    from scipy.misc import factorial
+    from scipy.special import factorial
     J = None
     # fac: Confirmed with Gregory Sharp that Shackleford paper is
     # missing the 2* on the d2v/dxdy cross terms in eq. 18/19.
@@ -1041,14 +1033,10 @@ class SplineSmooth3DUnregularized(SplineSmooth3D):
     q1=self.q+1
     q13 = q1**3
 
-    # The .encode() are a bit annoying, certain versions of
-    # numpy have difficulty with future unicode_literals,
-    # https://github.com/numpy/numpy/issues/10369 others don't
-    # like the encode("ascii").
     # optimal path, numpy 1.12 is slower for our case with just
     # True setting, numpy 1.16 is okay with both (and significantly
     # faster too)
-    optimize="optimal".encode("ascii","ignore")
+    optimize="optimal"
     phiSumOptPath=None
     voxWeightsOptPath=None
     cpWeightsOptPath=None
@@ -1064,7 +1052,7 @@ class SplineSmooth3DUnregularized(SplineSmooth3D):
         coefsZ2 = np.square(coefsZ)
         coefsY2 = np.square(coefsY)
         coefsX2 = np.square(coefsX)
-        voxWeightSum = "xc,yb,za,zyx->zyx".encode("ascii","ignore")
+        voxWeightSum = "xc,yb,za,zyx->zyx"
 
         if voxWeightsOptPath is None:
           voxWeightsOptPath = np.einsum_path(voxWeightSum,
@@ -1078,7 +1066,7 @@ class SplineSmooth3DUnregularized(SplineSmooth3D):
         omegaWeights[rangeZ[0]:rangeZ[1],
                      rangeY[0]:rangeY[1],
                      rangeX[0]:rangeX[1]] = voxWeights
-        cpWeightSum = "xc,yb,za,zyx->abc".encode("ascii","ignore")
+        cpWeightSum = "xc,yb,za,zyx->abc"
         if cpWeightsOptPath is None:
           cpWeightsOptPath = np.einsum_path(cpWeightSum,
             coefsX2,coefsY2,coefsZ2,
@@ -1101,7 +1089,7 @@ class SplineSmooth3DUnregularized(SplineSmooth3D):
       voxWeights = omegaWeights[rangeZ[0]:rangeZ[1],
                                 rangeY[0]:rangeY[1],
                                 rangeX[0]:rangeX[1]]
-      phiSum = "xc,yb,za,zyx,zyx->abc".encode("ascii","ignore")
+      phiSum = "xc,yb,za,zyx,zyx->abc"
       if phiSumOptPath is None:
         phiSumOptPath = np.einsum_path(phiSum,
           coefsX3,coefsY3,coefsZ3,
