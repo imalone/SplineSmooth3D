@@ -1,33 +1,12 @@
 import numpy as np
-# https://github.com/scipy/scipy/blob/v1.3.0/scipy/interpolate/_bspl.pyx#L163
-from scipy.interpolate._bspl import evaluate_all_bspl
 
-"""
-evaluate_all_bspl(const double[::1] t, int k, double xval, int m, int nu=0):
-
-Evaluate the ``k+1`` B-splines which are non-zero on interval ``m``.
-    Parameters
-    ----------
-    t : ndarray, shape (nt + k + 1,)
-        sorted 1D array of knots
-    k : int
-        spline order 
-    xval: float
-        argument at which to evaluate the B-splines
-    m : int
-        index of the left edge of the evaluation interval, ``t[m] <= x < t[m+1]``
-    nu : int, optional
-        Evaluate derivatives order `nu`. Default is zero.
-
-   Returns
-    -------
-    ndarray, shape (k+1,)
-        The values of B-splines :math:`[B_{m-k}(xval), ..., B_{m}(xval)]` if
-        `nu` is zero, otherwise the derivatives of order `nu`.
-
+### _bspl is not part of the public SciPy interface and may be withdrawn.
+### It is present in SciPy v1.3.0 and v1.3.1, evaluate_all_bspl documentation:
+### https://github.com/scipy/scipy/blob/v1.3.0/scipy/interpolate/_bspl.pyx#L163
 ### k, what scipy calls spline order, is actually degree,
 ### see their example k=3 for cubic splines
-"""
+from scipy.interpolate._bspl import evaluate_all_bspl
+
 def eval_nonzero_bspl(tfull,x,q=3,nu=0):
   tindstart = np.searchsorted(tfull,x,side="right")-1
   coeffstart = tindstart-q
