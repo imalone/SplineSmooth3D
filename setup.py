@@ -11,7 +11,8 @@ setup(
            'bin/splinesmooth3d-zerounsupported-demo.py',
            'bin/splinesmooth3d-j0-demo.py', 'bin/test-scipyspline-demo.py'],
   url='http://https://gitlab.drc.ion.ucl.ac.uk/malone/spline-experimentation/',
-  license='BSD',
+  license='LICENSE.txt',
+  classifiers=['License :: OSI Approved :: BSD License'],
   description='3D B-spline smoother supporting thin-plate and multi-level basis splines',
   long_description=open('README.txt').read(),
   install_requires=[
