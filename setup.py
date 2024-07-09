@@ -14,7 +14,8 @@ setup(
   license='LICENSE.txt',
   classifiers=['License :: OSI Approved :: BSD License'],
   description='3D B-spline smoother supporting thin-plate and multi-level basis splines',
-  long_description=open('README.txt').read(),
+  long_description=open('README.md').read(),
+  long_description_content_type='text/markdown',
   install_requires=[
     "numpy >= 1.17.2",
     "scipy >= 1.3.1",
