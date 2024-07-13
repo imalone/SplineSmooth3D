@@ -920,7 +920,7 @@ class SplineSmooth3D(object):
       # q+2=5 is correct for q=3, think it's also correct for
       # q!=3 cases, corresponds to polynomials +1 for overlap
       # to next basis.
-      coefConv = np.full(self.q+2,np.NaN)
+      coefConv = np.full(self.q+2,np.nan)
       coefConv[0::2] = np.array([1.0,6.0,1.0])/8
       coefConv[1::2] = np.array([1.0,1.0])/2
       coefConv3D = np.einsum("i,j,k->ijk",
@@ -939,7 +939,7 @@ class SplineSmooth3D(object):
       # origin=0. We use a NaN filled padding to make any
       # errors obvious.
       Pexpand = ndimage.convolve(Pexpand,coefConv3D,
-                                 mode="constant",cval=np.NaN)
+                                 mode="constant",cval=np.nan)
       Pexpand = Pexpand[dropEnds:-dropEnds,
                         dropEnds:-dropEnds,
                         dropEnds:-dropEnds]
