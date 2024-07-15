@@ -1145,12 +1145,14 @@ class SplineSmooth3DUnregularized(SplineSmooth3D):
     resid = data
     Plast = None
     for level in range(levels):
+      print("level",level)
       if level != 0:
         # Promote at start of subsequent levels
         resid = data - smoother.predict()
         smoother = smoother.promote()
         # Save the promoted state
         Plast = np.copy(smoother.P)
+      print(np.min(resid[self.mask>0]),np.max(resid[self.mask>0]))
       smoother.fit(resid)
       smoother.solve()
       if Plast is not None:
