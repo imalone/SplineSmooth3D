@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
   name='SplineSmooth3D',
-  version='0.1.0',
+  version='0.1.1',
   author='Ian Malone',
   author_email='i.malone@ucl.ac.uk',
   packages=['SplineSmooth3D'],
@@ -10,7 +10,7 @@ setup(
            'bin/splinesmooth3d-demo.py',
            'bin/splinesmooth3d-zerounsupported-demo.py',
            'bin/splinesmooth3d-j0-demo.py', 'bin/test-scipyspline-demo.py'],
-  url='http://https://gitlab.drc.ion.ucl.ac.uk/malone/spline-experimentation/',
+  url='https://github.com/imalone/SplineSmooth3D',
   license='LICENSE.txt',
   classifiers=['License :: OSI Approved :: BSD License'],
   description='3D B-spline smoother supporting thin-plate and multi-level basis splines',
