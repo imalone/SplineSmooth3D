@@ -1,17 +1,27 @@
 import numpy as np
 
-### _bspl is not part of the public SciPy interface and may be withdrawn.
-### It is present in SciPy v1.3.0 and v1.3.1, evaluate_all_bspl documentation:
+### evaluate_all_bspl is not currently part of the public
+### SciPy interface and could change. Prior to SciPy 1.15 it was
+### located in scipy.interpolate._bspl, after in scipy.interpolate._dierckx
+### SciPy maintainers are open to adding it:
+### https://github.com/scipy/scipy/issues/22570
+### documentation:
 ### https://github.com/scipy/scipy/blob/v1.3.0/scipy/interpolate/_bspl.pyx#L163
 ### k, what scipy calls spline order, is actually degree,
 ### see their example k=3 for cubic splines
-from scipy.interpolate._bspl import evaluate_all_bspl
+
+try:
+  ### SciPy < 1.15
+  from scipy.interpolate._bspl import evaluate_all_bspl
+except (ImportError):
+  ### SciPy >= 1.15
+  from scipy.interpolate._dierckx import evaluate_all_bspl
 
 def eval_nonzero_bspl(tfull,x,q=3,nu=0):
   tindstart = np.searchsorted(tfull,x,side="right")-1
   coeffstart = tindstart-q
   intervals = tfull.size - 2*q - 1
-  nonZeroCoeffs = evaluate_all_bspl(tfull,q,x,tindstart,nu=nu)
+  nonZeroCoeffs = evaluate_all_bspl(tfull,q,x,tindstart,nu)
   while coeffstart >= intervals:
       # Edge case, last internal knot is technically unsupported
       # since we are supporting from the left edge of the range,
